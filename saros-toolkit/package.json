@@ -1,0 +1,53 @@
+{
+  "name": "saros-toolkit",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build --turbopack",
+    "start": "next start",
+    "lint": "eslint",
+    "update:pools": "cross-env TS_NODE_TRANSPILE_ONLY=1 node --loader ts-node/esm update-pools.ts"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.31.1",
+    "@coral-xyz/borsh": "^0.31.1",
+    "@metaplex-foundation/js": "^0.20.1",
+    "@radix-ui/react-slot": "^1.2.3",
+    "@saros-finance/dlmm-sdk": "^1.4.0",
+    "@saros-finance/sdk": "^2.4.0",
+    "@solana/spl-token": "^0.4.14",
+    "@solana/wallet-adapter-base": "^0.9.27",
+    "@solana/wallet-adapter-react": "^0.15.39",
+    "@solana/wallet-adapter-react-ui": "^0.9.39",
+    "@solana/wallet-adapter-wallets": "^0.19.37",
+    "@solana/web3.js": "^1.98.4",
+    "bn.js": "^5.2.2",
+    "buffer": "^6.0.3",
+    "class-variance-authority": "^0.7.1",
+    "decimal.js": "^10.6.0",
+    "js-big-decimal": "^2.2.0",
+    "next": "15.5.2",
+    "process": "^0.11.10",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "tailwind-merge": "^3.3.1"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4",
+    "@types/bn.js": "^5.2.0",
+    "@types/decimal.js": "^7.4.3",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/webpack": "^5.28.5",
+    "cross-env": "^10.0.0",
+    "eslint": "^9",
+    "eslint-config-next": "15.5.2",
+    "tailwindcss": "^4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5",
+    "webpack": "^5.101.3"
+  }
+}
