@@ -19,11 +19,17 @@ const PoolsPageContent = () => {
   const router = useRouter();
 
   const [pools, setPools] = useState<any[]>([]);
-  const [loadingText, setLoadingText] = useState("Please connect your wallet...");
+  const [loadingText, setLoadingText] = useState(
+    "Please connect your wallet..."
+  );
 
   const sdk = useMemo(() => {
     if (!connected || !wallet || !wallet.publicKey) return null;
-    const provider = new AnchorProvider(connection, wallet as any, AnchorProvider.defaultOptions());
+    const provider = new AnchorProvider(
+      connection,
+      wallet as any,
+      AnchorProvider.defaultOptions()
+    );
     setProvider(provider);
     const sdkInstance = new LiquidityBookServices({ mode: MODE.DEVNET });
     sdkInstance.connection = connection;
@@ -64,15 +70,15 @@ const PoolsPageContent = () => {
             const estimatedMs = Math.round(poolsRemaining * avgTimePerPool);
 
             if (isFinite(estimatedMs) && estimatedMs > 0) {
-                const totalSeconds = Math.floor(estimatedMs / 1000);
-                const minutes = Math.floor(totalSeconds / 60);
-                const seconds = totalSeconds % 60;
-    
-                if (minutes > 0) {
-                  estimatedTimeString = ` (est. ${minutes}m ${seconds}s remaining)`;
-                } else {
-                  estimatedTimeString = ` (est. ${seconds}s remaining)`;
-                }
+              const totalSeconds = Math.floor(estimatedMs / 1000);
+              const minutes = Math.floor(totalSeconds / 60);
+              const seconds = totalSeconds % 60;
+
+              if (minutes > 0) {
+                estimatedTimeString = ` (est. ${minutes}m ${seconds}s remaining)`;
+              } else {
+                estimatedTimeString = ` (est. ${seconds}s remaining)`;
+              }
             }
           }
 
@@ -107,7 +113,9 @@ const PoolsPageContent = () => {
                 baseLogoURI: baseTokenInfo.logoURI,
                 quoteLogoURI: quoteTokenInfo.logoURI,
                 price: isNaN(price) ? 0 : price,
-                liquidity: Number(metadata.baseReserve || 0) + Number(metadata.quoteReserve || 0),
+                liquidity:
+                  Number(metadata.baseReserve || 0) +
+                  Number(metadata.quoteReserve || 0),
               };
             } catch (e) {
               console.error(`Failed to process pool ${address}:`, e);
@@ -116,16 +124,23 @@ const PoolsPageContent = () => {
           });
 
           const batchResults = await Promise.all(batchPromises);
-          allFetchedPools.push(...batchResults.filter((p): p is any => p !== null));
+          allFetchedPools.push(
+            ...batchResults.filter((p): p is any => p !== null)
+          );
           setPools([...allFetchedPools]);
         }
 
         if (typeof window !== "undefined") {
-          sessionStorage.setItem("cachedPools", JSON.stringify(allFetchedPools));
+          sessionStorage.setItem(
+            "cachedPools",
+            JSON.stringify(allFetchedPools)
+          );
         }
       } catch (err) {
         console.error("Failed to fetch pools:", err);
-        setLoadingText("An error occurred while fetching pools. Please try refreshing.");
+        setLoadingText(
+          "An error occurred while fetching pools. Please try refreshing."
+        );
       } finally {
         setLoadingText("");
       }
@@ -159,7 +174,10 @@ const PoolsPageContent = () => {
     <div className="flex min-h-screen w-full flex-col">
       <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background/80 px-4 backdrop-blur-sm md:px-6">
         <nav className="hidden flex-col gap-6 text-lg font-medium md:flex md:flex-row md:items-center md:gap-5 md:text-sm lg:gap-6">
-          <a href="/dashboard" className="flex items-center gap-2 font-bold text-foreground">
+          <a
+            href="/dashboard"
+            className="flex items-center gap-2 font-bold text-foreground"
+          >
             <Layers className="h-6 w-6" />
             <span>Saros DLMM</span>
           </a>
@@ -200,7 +218,9 @@ const PoolsPageContent = () => {
 
         {!connected ? (
           <div className="flex flex-1 items-center justify-center rounded-lg border-2 border-dashed">
-            <p className="text-muted-foreground">Please connect your wallet to view pools.</p>
+            <p className="text-muted-foreground">
+              Please connect your wallet to view pools.
+            </p>
           </div>
         ) : sdk ? (
           <PoolList

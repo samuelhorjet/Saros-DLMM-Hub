@@ -18,9 +18,15 @@ const DashboardContent = () => {
   const sdk = useMemo(() => {
     if (!connected || !wallet.publicKey) return null;
     try {
-      const provider = new AnchorProvider(connection, wallet as any, AnchorProvider.defaultOptions());
+      const provider = new AnchorProvider(
+        connection,
+        wallet as any,
+        AnchorProvider.defaultOptions()
+      );
       setProvider(provider);
-      return new LiquidityBookServices({ mode: MODE.DEVNET });
+      const sdkInstance = new LiquidityBookServices({ mode: MODE.DEVNET });
+      sdkInstance.connection = connection; // ✅ force SDK to use your RPC
+      return sdkInstance;
     } catch (error) {
       console.error("Error initializing SDK:", error);
       return null;
@@ -29,11 +35,11 @@ const DashboardContent = () => {
 
   useEffect(() => {
     if (!connected) {
-      router.push('/');
+      router.push("/");
     }
   }, [connected, router]);
 
-  const handleNavigation = (section: 'pools' | 'positions') => {
+  const handleNavigation = (section: "pools" | "positions") => {
     router.push(`/${section}`);
   };
 
@@ -41,7 +47,10 @@ const DashboardContent = () => {
     <div className="flex min-h-screen w-full flex-col">
       <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background/80 px-4 backdrop-blur-sm md:px-6">
         <nav className="hidden flex-col gap-6 text-lg font-medium md:flex md:flex-row md:items-center md:gap-5 md:text-sm lg:gap-6">
-          <a href="/dashboard" className="flex items-center gap-2 font-bold text-foreground">
+          <a
+            href="/dashboard"
+            className="flex items-center gap-2 font-bold text-foreground"
+          >
             <Layers className="h-6 w-6" />
             <span>Saros DLMM</span>
           </a>
@@ -85,5 +94,5 @@ const DashboardContent = () => {
 };
 
 export default function DashboardPage() {
-    return <DashboardContent />;
+  return <DashboardContent />;
 }
