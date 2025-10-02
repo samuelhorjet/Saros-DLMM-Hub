@@ -1,7 +1,6 @@
-// src/components/PoolDetails.tsx
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { LiquidityBookServices } from '@saros-finance/dlmm-sdk';
 import { PublicKey } from '@solana/web3.js';
 import { PositionInfo } from '@saros-finance/dlmm-sdk/types/services';
@@ -81,6 +80,8 @@ export const PoolDetails: React.FC<PoolDetailsProps> = ({ sdk, poolAddress, user
     const [allPositions, setAllPositions] = useState<PositionInfo[]>([]);
     const [loadingPositions, setLoadingPositions] = useState(false);
     const [positionsError, setPositionsError] = useState<string | null>(null);
+    const [positionStatus, setPositionStatus] = useState('');
+    const [retryCountdown, setRetryCountdown] = useState<number | null>(null);
     
     const [positionFilter, setPositionFilter] = useState<PositionFilter>('all');
     
@@ -88,22 +89,79 @@ export const PoolDetails: React.FC<PoolDetailsProps> = ({ sdk, poolAddress, user
     const [isRebalanceModalOpen, setIsRebalanceModalOpen] = useState(false);
     const [isBurnModalOpen, setIsBurnModalOpen] = useState(false);
     const [selectedPosition, setSelectedPosition] = useState<EnrichedPositionData | null>(null);
+    
+    const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+    useEffect(() => {
+        return () => {
+            if (countdownIntervalRef.current) {
+                clearInterval(countdownIntervalRef.current);
+            }
+        };
+    }, []);
+
+    const startCountdown = (seconds: number) => {
+        if (countdownIntervalRef.current) {
+            clearInterval(countdownIntervalRef.current);
+        }
+        setRetryCountdown(seconds);
+        countdownIntervalRef.current = setInterval(() => {
+            setRetryCountdown(prev => {
+                if (prev === null || prev <= 1) {
+                    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+                    return null;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+    };
+
+    const getPositionCacheKey = useCallback(() => `cached_positions_${poolAddress}_${userPublicKey.toBase58()}`, [poolAddress, userPublicKey]);
 
     const handleFetchPositions = useCallback(async (forceRefresh: boolean = false) => {
-        if (!poolData) return; 
+        if (!poolData) return;
+        
+        const cacheKey = getPositionCacheKey();
+        if (!forceRefresh) {
+            const cachedData = sessionStorage.getItem(cacheKey);
+            if (cachedData) {
+                try {
+                    const cachedPositions = JSON.parse(cachedData);
+                    setAllPositions(cachedPositions);
+                    setPositionStatus(`Loaded ${cachedPositions.length} positions from cache.`);
+                    return;
+                } catch (e) { console.error("Failed to parse cached positions, refetching...", e); }
+            }
+        }
 
         setLoadingPositions(true);
         setPositionsError(null);
-        try {
-            const userPositions = await sdk.getUserPositions({ payer: userPublicKey, pair: new PublicKey(poolAddress) });
-            setAllPositions(userPositions);
-        } catch (err: any) {
-            console.error(`Failed to fetch positions:`, err);
-            setPositionsError("Failed to fetch positions due to network congestion. Please try again.");
-        } finally {
-            setLoadingPositions(false);
+        setAllPositions([]);
+        setRetryCountdown(null);
+        
+        const MAX_ATTEMPTS = 3;
+        const RETRY_DELAY = 5000;
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            setPositionStatus(`Fetching positions... (Attempt ${attempt} of ${MAX_ATTEMPTS})`);
+            try {
+                const userPositions = await sdk.getUserPositions({ payer: userPublicKey, pair: new PublicKey(poolAddress) });
+                setPositionStatus(`Successfully fetched ${userPositions.length} positions.`);
+                setAllPositions(userPositions);
+                sessionStorage.setItem(cacheKey, JSON.stringify(userPositions));
+                setLoadingPositions(false);
+                return;
+            } catch (err: any) {
+                console.error(`Attempt ${attempt} failed:`, err);
+                if (attempt === MAX_ATTEMPTS) {
+                    setPositionsError("Failed to fetch positions after several attempts. The network may be congested. Please try refreshing again shortly.");
+                } else {
+                    startCountdown(RETRY_DELAY / 1000);
+                    await new Promise(res => setTimeout(res, RETRY_DELAY));
+                }
+            }
         }
-    }, [sdk, poolAddress, userPublicKey, poolData]);
+        setLoadingPositions(false);
+    }, [sdk, poolAddress, userPublicKey, poolData, getPositionCacheKey]);
 
     useEffect(() => {
         const fetchPoolDetails = async () => {
@@ -130,11 +188,11 @@ export const PoolDetails: React.FC<PoolDetailsProps> = ({ sdk, poolAddress, user
             }
         };
         fetchPoolDetails();
-    }, [sdk, poolAddress]); 
+    }, [sdk, poolAddress]);
 
     const handleTabClick = (tab: 'addLiquidity' | 'myPositions') => {
         setActiveTab(tab);
-        const newUrl = `${pathname}?pool=${poolAddress}&tab=${tab}`;
+        const newUrl = `${pathname}?tab=${tab}`;
         router.push(newUrl, { scroll: false });
 
         if (tab === 'myPositions' && !loadingDetails && poolData && allPositions.length === 0 && !positionsError) {
@@ -149,11 +207,16 @@ export const PoolDetails: React.FC<PoolDetailsProps> = ({ sdk, poolAddress, user
         handleFetchPositions(true);
     };
 
-    // ... (modal open handlers remain the same) ...
-
     const handleSelectPosition = (positionData: EnrichedPositionData) => {
         sessionStorage.setItem(`position_details_${positionData.key}`, JSON.stringify(positionData));
         router.push(`/positions/${positionData.key}`);
+    };
+    
+    const openModal = (type: 'remove' | 'rebalance' | 'burn', position: EnrichedPositionData) => {
+        setSelectedPosition(position);
+        if (type === 'remove') setIsRemoveModalOpen(true);
+        if (type === 'rebalance') setIsRebalanceModalOpen(true);
+        if (type === 'burn') setIsBurnModalOpen(true);
     };
 
     const enrichedPositions = useMemo(() => {
@@ -266,7 +329,17 @@ export const PoolDetails: React.FC<PoolDetailsProps> = ({ sdk, poolAddress, user
                                     </Button>
                                 </div>
 
-                                {loadingPositions ? <Skeleton className="h-40 w-full" /> : 
+                                {loadingPositions ? (
+                                    <div className="text-center">
+                                        <p className="text-sm text-muted-foreground mb-2">{positionStatus}</p>
+                                        {retryCountdown !== null && (
+                                            <p className="text-sm font-bold text-primary mb-4">
+                                                Retrying in {retryCountdown} seconds...
+                                            </p>
+                                        )}
+                                        <Skeleton className="h-40 w-full" />
+                                    </div>
+                                ) : 
                                 positionsError ? <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Error</AlertTitle><AlertDescription>{positionsError}</AlertDescription></Alert> :
                                 allPositions.length > 0 ? (
                                     filteredPositions.length > 0 ? (
@@ -275,10 +348,10 @@ export const PoolDetails: React.FC<PoolDetailsProps> = ({ sdk, poolAddress, user
                                                 <PositionCard 
                                                     key={posData.key} 
                                                     enrichedData={posData} 
-                                                    onRemove={() => { setSelectedPosition(posData); setIsRemoveModalOpen(true); }}
-                                                    onRebalance={() => { setSelectedPosition(posData); setIsRebalanceModalOpen(true); }}
+                                                    onRemove={() => openModal('remove', posData)}
+                                                    onRebalance={() => openModal('rebalance', posData)}
                                                     onSelect={() => handleSelectPosition(posData)}
-                                                    onBurn={() => { setSelectedPosition(posData); setIsBurnModalOpen(true); }}
+                                                    onBurn={() => openModal('burn', posData)}
                                                 />
                                             ))}
                                         </div>

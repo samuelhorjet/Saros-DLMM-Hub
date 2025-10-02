@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { LiquidityBookServices, MODE } from "@saros-finance/dlmm-sdk";
 import { PoolList } from "@/components/PoolList";
 import { PublicKey } from "@solana/web3.js";
@@ -18,22 +18,17 @@ const PoolsPageContent = () => {
   const { connected } = wallet;
   const router = useRouter();
 
-  const [sdk, setSdk] = useState<LiquidityBookServices | null>(null);
   const [pools, setPools] = useState<any[]>([]);
   const [loadingText, setLoadingText] = useState("Please connect your wallet...");
 
-  // Initialize SDK client-side only
-  useEffect(() => {
-    if (connected && wallet.publicKey) {
-      const provider = new AnchorProvider(connection, wallet as any, AnchorProvider.defaultOptions());
-      setProvider(provider);
-      const sdkInstance = new LiquidityBookServices({ mode: MODE.DEVNET });
-      sdkInstance.connection = connection;
-      setSdk(sdkInstance);
-    } else {
-      setSdk(null);
-    }
-  }, [connected, wallet, connection]);
+  const sdk = useMemo(() => {
+    if (!connected || !wallet || !wallet.publicKey) return null;
+    const provider = new AnchorProvider(connection, wallet as any, AnchorProvider.defaultOptions());
+    setProvider(provider);
+    const sdkInstance = new LiquidityBookServices({ mode: MODE.DEVNET });
+    sdkInstance.connection = connection;
+    return sdkInstance;
+  }, [connected, connection, wallet]);
 
   const fetchAndFilterPools = useCallback(
     async (forceRefresh: boolean = false) => {
@@ -54,11 +49,35 @@ const PoolsPageContent = () => {
 
         let allFetchedPools: any[] = [];
         const BATCH_SIZE = 10;
+        const startTime = Date.now();
 
         for (let i = 0; i < uniquePoolAddresses.length; i += BATCH_SIZE) {
           const batchAddresses = uniquePoolAddresses.slice(i, i + BATCH_SIZE);
+          const poolsProcessed = i + batchAddresses.length;
+          let estimatedTimeString = "";
+
+          // Calculate and show estimate only after the first batch for better accuracy
+          if (i > 0) {
+            const elapsedTime = Date.now() - startTime; // in milliseconds
+            const avgTimePerPool = elapsedTime / i; // 'i' is the number of pools *completed* before this batch
+            const poolsRemaining = uniquePoolAddresses.length - i;
+            const estimatedMs = Math.round(poolsRemaining * avgTimePerPool);
+
+            if (isFinite(estimatedMs) && estimatedMs > 0) {
+                const totalSeconds = Math.floor(estimatedMs / 1000);
+                const minutes = Math.floor(totalSeconds / 60);
+                const seconds = totalSeconds % 60;
+    
+                if (minutes > 0) {
+                  estimatedTimeString = ` (est. ${minutes}m ${seconds}s remaining)`;
+                } else {
+                  estimatedTimeString = ` (est. ${seconds}s remaining)`;
+                }
+            }
+          }
+
           setLoadingText(
-            `Fetching pool details... (${i + batchAddresses.length}/${uniquePoolAddresses.length})`
+            `Fetching pool details... (${poolsProcessed}/${uniquePoolAddresses.length})${estimatedTimeString}`
           );
 
           const batchPromises = batchAddresses.map(async (address) => {
@@ -123,7 +142,6 @@ const PoolsPageContent = () => {
     await fetchAndFilterPools(true);
   };
 
-  // Only run pool fetching on client
   useEffect(() => {
     if (connected && sdk) {
       fetchAndFilterPools();

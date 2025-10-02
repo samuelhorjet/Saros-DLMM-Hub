@@ -1,16 +1,14 @@
-// src/components/PoolList.tsx
 "use client";
 import React, { useState, useMemo, useEffect } from "react";
 import { CreatePool } from "./CreatePool";
 import { LiquidityBookServices } from "@saros-finance/dlmm-sdk";
 import { PublicKey } from "@solana/web3.js";
-import { motion, AnimatePresence } from "framer-motion";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { PlusCircle, Search, Copy, RefreshCw } from 'lucide-react';
+import { PlusCircle, Search, Copy, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Skeleton } from "@/components/ui/skeleton";
 
 // --- HELPER COMPONENTS ---
@@ -24,7 +22,7 @@ const logoStyle: React.CSSProperties = {
 };
 
 const FallbackLogo: React.FC<{ symbol?: string }> = ({ symbol }) => (
-  <div style={{ ...logoStyle, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: "bold", color: "white" }}>
+  <div style={{ ...logoStyle, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: "bold" }} className="text-foreground bg-muted">
     {symbol ? symbol.charAt(0).toUpperCase() : "?"}
   </div>
 );
@@ -52,6 +50,30 @@ const CopyButton: React.FC<{ textToCopy: string }> = ({ textToCopy }) => {
   );
 };
 
+interface PaginationControlsProps {
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+}
+
+const PaginationControls: React.FC<PaginationControlsProps> = ({ currentPage, totalPages, onPageChange }) => {
+  if (totalPages <= 1) return null;
+
+  return (
+    <div className="flex items-center justify-center space-x-2 mt-4">
+      <Button variant="outline" size="icon" onClick={() => onPageChange(currentPage - 1)} disabled={currentPage === 1}>
+        <ChevronLeft className="h-4 w-4" />
+      </Button>
+      <span className="text-sm text-muted-foreground">
+        Page {currentPage} of {totalPages}
+      </span>
+      <Button variant="outline" size="icon" onClick={() => onPageChange(currentPage + 1)} disabled={currentPage === totalPages}>
+        <ChevronRight className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+};
+
 interface PoolListProps {
   pools: any[];
   onPoolSelect: (address: string) => void;
@@ -68,6 +90,9 @@ export const PoolList: React.FC<PoolListProps> = ({ pools, onPoolSelect, sdk, on
   const [isValidating, setIsValidating] = useState(false);
   const [filterOption, setFilterOption] = useState<"all" | "with-liquidity" | "zero-liquidity">("with-liquidity");
   const [sortOption, setSortOption] = useState<"desc" | "asc">("desc");
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const POOLS_PER_PAGE = 10;
 
   useEffect(() => {
     const isPotentialAddress = searchValue.length >= 32 && searchValue.length <= 44 && !searchValue.includes("/");
@@ -101,7 +126,7 @@ export const PoolList: React.FC<PoolListProps> = ({ pools, onPoolSelect, sdk, on
   const processedPools = useMemo(() => {
     let filteredPools = pools;
     if (filterOption === "with-liquidity") {
-      filteredPools = pools.filter((pool) => pool.liquidity > 1); // filter dust
+      filteredPools = pools.filter((pool) => pool.liquidity > 1);
     } else if (filterOption === "zero-liquidity") {
       filteredPools = pools.filter((pool) => pool.liquidity <= 1);
     }
@@ -116,19 +141,33 @@ export const PoolList: React.FC<PoolListProps> = ({ pools, onPoolSelect, sdk, on
     });
   }, [pools, filterOption, sortOption, searchValue]);
 
+  // Reset to page 1 whenever filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterOption, sortOption, searchValue]);
+
+  const totalPages = Math.ceil(processedPools.length / POOLS_PER_PAGE);
+  const paginatedPools = processedPools.slice((currentPage - 1) * POOLS_PER_PAGE, currentPage * POOLS_PER_PAGE);
+  const firstItemIndex = (currentPage - 1) * POOLS_PER_PAGE + 1;
+  const lastItemIndex = Math.min(currentPage * POOLS_PER_PAGE, processedPools.length);
+
   const formatNumber = (num: number | undefined) => {
     if (num === undefined) return "N/A";
     return `$${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
   
   const formatPrice = (price: number) => {
+    if (!price || !isFinite(price)) return "$0.00";
     if (price < 0.000001 && price > 0) return `< $0.000001`;
-    return `$${price.toFixed(6)}`;
+    return `$${price.toLocaleString(undefined, { maximumFractionDigits: 6 })}`;
   }
 
   const renderLoadingState = () => (
     <Card>
       <CardContent className="p-6">
+        <div className="text-center text-muted-foreground mb-4">
+          <p>{loadingText}</p>
+        </div>
         <div className="space-y-4">
           {[...Array(5)].map((_, i) => (
             <div key={i} className="flex items-center space-x-4">
@@ -146,7 +185,6 @@ export const PoolList: React.FC<PoolListProps> = ({ pools, onPoolSelect, sdk, on
 
   return (
     <div className="animate-slide-up space-y-4">
-      {/* --- Controls --- */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
@@ -194,33 +232,32 @@ export const PoolList: React.FC<PoolListProps> = ({ pools, onPoolSelect, sdk, on
            <CreatePool sdk={sdk} onPoolCreated={handlePoolCreated} onClose={() => setIsModalOpen(false)} />
       )}
 
-      {/* --- Pool List --- */}
-      {loading && pools.length === 0 ? renderLoadingState() : (
+      {loading ? renderLoadingState() : (
         <>
             <div className="text-sm text-muted-foreground">
-                Showing {processedPools.length} of {pools.length} pools.
+                Showing {firstItemIndex} - {lastItemIndex} of {processedPools.length} pools.
             </div>
             <Card className="hidden md:block">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Pair</TableHead>
-                    <TableHead className="text-right">Total Value Locked</TableHead>
-                    <TableHead className="text-right">Current Price</TableHead>
+                    <TableHead>Total Value Locked</TableHead>
+                    <TableHead>Current Price</TableHead>
                     <TableHead>Pool Address</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {processedPools.length > 0 ? processedPools.map((pool) => (
-                    <TableRow key={pool.address} onClick={() => onPoolSelect(pool.address)} className="cursor-pointer">
+                  {paginatedPools.length > 0 ? paginatedPools.map((pool) => (
+                    <TableRow key={pool.address} onClick={() => onPoolSelect(pool.address)} className="cursor-pointer hover:bg-muted/50">
                       <TableCell>
                         <div className="flex items-center gap-3">
-                          <PairLogos {...pool} />
+                          <PairLogos baseLogo={pool.baseLogoURI} quoteLogo={pool.quoteLogoURI} baseSymbol={pool.baseSymbol} quoteSymbol={pool.quoteSymbol} />
                           <span className="font-medium">{pool.baseSymbol}/{pool.quoteSymbol}</span>
                         </div>
                       </TableCell>
-                      <TableCell className="text-right font-mono">{formatNumber(pool.liquidity)}</TableCell>
-                      <TableCell className="text-right font-mono">{formatPrice(pool.price)}</TableCell>
+                      <TableCell className="font-mono">{formatNumber(pool.liquidity)}</TableCell>
+                      <TableCell className="font-mono">{formatPrice(pool.price)}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-xs">{`${pool.address.slice(0, 6)}...${pool.address.slice(-6)}`}</span>
@@ -238,12 +275,12 @@ export const PoolList: React.FC<PoolListProps> = ({ pools, onPoolSelect, sdk, on
             </Card>
 
             <div className="grid gap-4 md:hidden">
-                {processedPools.length > 0 ? processedPools.map((pool) => (
+                {paginatedPools.length > 0 ? paginatedPools.map((pool) => (
                      <Card key={pool.address} onClick={() => onPoolSelect(pool.address)} className="cursor-pointer">
                         <CardContent className="p-4">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-3">
-                                    <PairLogos {...pool} />
+                                    <PairLogos baseLogo={pool.baseLogoURI} quoteLogo={pool.quoteLogoURI} baseSymbol={pool.baseSymbol} quoteSymbol={pool.quoteSymbol} />
                                     <span className="font-medium">{pool.baseSymbol}/{pool.quoteSymbol}</span>
                                 </div>
                                  <div className="flex items-center gap-2">
@@ -269,6 +306,7 @@ export const PoolList: React.FC<PoolListProps> = ({ pools, onPoolSelect, sdk, on
                     </Card>
                 )}
             </div>
+            <PaginationControls currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
         </>
       )}
     </div>

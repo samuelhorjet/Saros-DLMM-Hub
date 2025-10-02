@@ -1,5 +1,5 @@
-// src/app/positions/page.tsx
 "use client";
+
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
@@ -28,6 +28,7 @@ export interface EnrichedPositionData {
   poolAddress: string;
 }
 type PositionFilter = "all" | "active" | "inactive" | "empty";
+type SortOption = "desc" | "asc";
 
 const PositionsPageContent = () => {
     const { connection } = useConnection();
@@ -38,11 +39,11 @@ const PositionsPageContent = () => {
     const [allEnrichedPositions, setAllEnrichedPositions] = useState<EnrichedPositionData[]>([]);
     const [statusMessage, setStatusMessage] = useState("Please connect your wallet...");
     const [isLoading, setIsLoading] = useState(false);
-
     const [eta, setEta] = useState<string | null>(null);
-
+    
     const [positionFilter, setPositionFilter] = useState<PositionFilter>("all");
     const [searchTerm, setSearchTerm] = useState("");
+    const [sortOption, setSortOption] = useState<SortOption>('desc');
     
     const [isRemoveModalOpen, setIsRemoveModalOpen] = useState(false);
     const [isRebalanceModalOpen, setIsRebalanceModalOpen] = useState(false);
@@ -206,6 +207,9 @@ const PositionsPageContent = () => {
     useEffect(() => {
         if (connected && sdk) {
             fetchAllUserPositions();
+        } else {
+            setAllEnrichedPositions([]);
+            setStatusMessage("Please connect your wallet...");
         }
     }, [connected, sdk, fetchAllUserPositions]);
 
@@ -225,7 +229,8 @@ const PositionsPageContent = () => {
 
     const processedPositions = useMemo(() => {
         const lowerSearch = searchTerm.toLowerCase();
-        return allEnrichedPositions
+        
+        let filtered = allEnrichedPositions
             .filter(p => {
                 const pairSymbol = `${p.baseToken.symbol}/${p.quoteToken.symbol}`.toLowerCase();
                 return pairSymbol.includes(lowerSearch) || p.poolAddress.toLowerCase().includes(lowerSearch);
@@ -238,13 +243,66 @@ const PositionsPageContent = () => {
                 if (positionFilter === 'inactive') return totalLiquidity > BigInt(0) && !isActive;
                 return true;
             });
-    }, [allEnrichedPositions, positionFilter, searchTerm]);
+
+        filtered.sort((a, b) => {
+            const liqA = a.position.liquidityShares.reduce((acc, val) => acc + BigInt(val), BigInt(0));
+            const liqB = b.position.liquidityShares.reduce((acc, val) => acc + BigInt(val), BigInt(0));
+            if (sortOption === 'desc') {
+                return liqB > liqA ? 1 : -1;
+            } else {
+                return liqA > liqB ? 1 : -1;
+            }
+        });
+        
+        return filtered;
+    }, [allEnrichedPositions, positionFilter, searchTerm, sortOption]);
 
     const renderLoadingState = () => (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
             {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-56 w-full" />)}
         </div>
     );
+
+    const renderContent = () => {
+        if (isLoading) {
+            return (
+                <div className="space-y-4">
+                    <div className="text-center text-muted-foreground">
+                        <p>{statusMessage}</p>
+                        {eta && <p className="text-sm">{eta}</p>}
+                    </div>
+                    {renderLoadingState()}
+                </div>
+            );
+        }
+
+        if (!connected || !sdk) {
+            return <p className="text-center text-muted-foreground py-10">Please connect your wallet.</p>;
+        }
+
+        if (allEnrichedPositions.length === 0) {
+            return <p className="text-center text-muted-foreground py-10">{statusMessage || "No positions found."}</p>;
+        }
+        
+        if (processedPositions.length > 0) {
+            return (
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                    {processedPositions.map((data) => (
+                        <PositionCard
+                            key={data.key}
+                            enrichedData={data}
+                            onRemove={() => openModal('remove', data)}
+                            onRebalance={() => openModal('rebalance', data)}
+                            onSelect={() => handleSelectPosition(data)}
+                            onBurn={() => openModal('burn', data)}
+                        />
+                    ))}
+                </div>
+            );
+        }
+
+        return <p className="text-center text-muted-foreground py-10">No positions match your filters.</p>;
+    }
 
     return (
      <div className="flex min-h-screen w-full flex-col">
@@ -278,12 +336,12 @@ const PositionsPageContent = () => {
                 <p className="text-muted-foreground">An overview of all your liquidity positions across all pools.</p>
             </div>
 
-             <div className="flex flex-col gap-4 md:flex-row">
+             <div className="flex flex-col gap-4 md:flex-row md:items-center">
                 <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                     <Input placeholder="Search by symbol or pool address..." className="pl-10" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col gap-2 md:flex-row md:items-center">
                     <Select value={positionFilter} onValueChange={v => setPositionFilter(v as PositionFilter)}>
                         <SelectTrigger className="w-full md:w-[150px]">
                             <SelectValue placeholder="Filter..." />
@@ -295,33 +353,29 @@ const PositionsPageContent = () => {
                             <SelectItem value="empty">Empty</SelectItem>
                         </SelectContent>
                     </Select>
-                    <Button variant="outline" size="icon" onClick={() => fetchAllUserPositions(true)} disabled={isLoading}>
-                        <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-                    </Button>
-                    <Button onClick={() => router.push('/pools')} className="w-full md:w-auto">
-                        <PlusCircle className="h-4 w-4 mr-2" /> Add Liquidity
-                    </Button>
+                     <Select value={sortOption} onValueChange={v => setSortOption(v as SortOption)}>
+                        <SelectTrigger className="w-full md:w-[240px]">
+                            <SelectValue placeholder="Sort by..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="desc">Sort by Liquidity: High to Low</SelectItem>
+                            <SelectItem value="asc">Sort by Liquidity: Low to High</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    <div className="flex items-center gap-2">
+                         <Button variant="outline" size="icon" onClick={() => fetchAllUserPositions(true)} disabled={isLoading}>
+                            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+                        </Button>
+                        <Button onClick={() => router.push('/pools')} className="w-full">
+                            <PlusCircle className="h-4 w-4 mr-2" /> Add Liquidity
+                        </Button>
+                    </div>
                 </div>
             </div>
-
-            {isLoading ? renderLoadingState() :
-             !connected || !sdk ? <p className="text-center text-muted-foreground py-10">Please connect your wallet.</p> :
-             allEnrichedPositions.length === 0 ? <p className="text-center text-muted-foreground py-10">{statusMessage || "No positions found."}</p> :
-             processedPositions.length > 0 ? (
-                <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-                    {processedPositions.map((data) => (
-                        <PositionCard
-                            key={data.key}
-                            enrichedData={data}
-                            onRemove={() => openModal('remove', data)}
-                            onRebalance={() => openModal('rebalance', data)}
-                            onSelect={() => handleSelectPosition(data)}
-                            onBurn={() => openModal('burn', data)}
-                        />
-                    ))}
-                </div>
-            ) : <p className="text-center text-muted-foreground py-10">No positions match your filters.</p>
-            }
+            
+            <div className="mt-4">
+                {renderContent()}
+            </div>
 
             {sdk && (
                 <>
@@ -335,8 +389,6 @@ const PositionsPageContent = () => {
     );
 };
 
-function AllPositionsPage() {
+export default function AllPositionsPage() {
   return <PositionsPageContent />;
 }
-
-export default AllPositionsPage;

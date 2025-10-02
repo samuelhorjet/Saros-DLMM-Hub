@@ -1,4 +1,3 @@
-// src/components/PositionCard.tsx
 "use client";
 import React from 'react';
 import { TokenInfo } from '@/utils/token';
@@ -6,7 +5,31 @@ import { EnrichedPositionData } from '@/app/positions/page';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Layers, MinusCircle, RefreshCw, Trash2 } from 'lucide-react';
+import { MinusCircle, RefreshCw, Trash2 } from 'lucide-react';
+
+// --- HELPER COMPONENTS FOR LOGOS (from original file) ---
+const logoStyle: React.CSSProperties = {
+  width: 24,
+  height: 24,
+  borderRadius: "50%",
+  backgroundColor: "#333",
+};
+
+const FallbackLogo: React.FC<{ symbol?: string }> = ({ symbol }) => (
+  <div style={{ ...logoStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'bold' }}>
+    {symbol ? symbol.charAt(0).toUpperCase() : '?'}
+  </div>
+);
+
+const PairLogos: React.FC<{ baseToken: TokenInfo; quoteToken: TokenInfo; }> = ({ baseToken, quoteToken }) => {
+  return (
+    <div className="flex items-center">
+      {baseToken.logoURI ? <img src={baseToken.logoURI} alt={baseToken.symbol} style={logoStyle} /> : <FallbackLogo symbol={baseToken.symbol} />}
+      {quoteToken.logoURI ? <img src={quoteToken.logoURI} alt={quoteToken.symbol} style={{...logoStyle, marginLeft: '-8px' }} /> : <FallbackLogo symbol={quoteToken.symbol} />}
+    </div>
+  );
+};
+// --- END HELPER COMPONENTS ---
 
 interface PositionCardProps {
     enrichedData: EnrichedPositionData;
@@ -50,7 +73,10 @@ export const PositionCard: React.FC<PositionCardProps> = ({ enrichedData, onRemo
         <Card className="flex flex-col justify-between transition-all hover:border-primary/50">
             <div onClick={onSelect} className="cursor-pointer">
                 <CardHeader className="flex-row items-center justify-between pb-2">
-                    <CardTitle className="text-lg">{baseToken.symbol} / {quoteToken.symbol}</CardTitle>
+                    <div className="flex items-center gap-3">
+                        <PairLogos baseToken={baseToken} quoteToken={quoteToken} />
+                        <CardTitle className="text-lg">{baseToken.symbol} / {quoteToken.symbol}</CardTitle>
+                    </div>
                     <Badge variant={statusVariant}>{status}</Badge>
                 </CardHeader>
                 <CardContent className="space-y-2 text-sm">

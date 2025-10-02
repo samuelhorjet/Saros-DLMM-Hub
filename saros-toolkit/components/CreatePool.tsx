@@ -1,4 +1,3 @@
-// src/components/CreatePool.tsx
 "use client";
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { LiquidityBookServices } from "@saros-finance/dlmm-sdk";
@@ -135,6 +134,10 @@ const TokenSelectionModal: React.FC<TokenSelectionModalProps> = ({ isOpen, onClo
         >
             <div className="p-4 border-b">
                 <h4 className="font-semibold">Select a Token</h4>
+                 <div className="flex gap-2 mt-2">
+                    <Button variant={activeTab === 'all' ? 'default' : 'outline'} size="sm" onClick={() => setActiveTab('all')}>All Tokens</Button>
+                    <Button variant={activeTab === 'myTokens' ? 'default' : 'outline'} size="sm" onClick={() => setActiveTab('myTokens')}>My Tokens</Button>
+                </div>
                 <div className="relative mt-2">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
@@ -149,8 +152,16 @@ const TokenSelectionModal: React.FC<TokenSelectionModalProps> = ({ isOpen, onClo
             </div>
             <div className="flex-1 overflow-y-auto p-2">
                 {validatedToken && <TokenModalRow token={validatedToken} onSelect={handleSelect} />}
+                
+                {activeTab === "myTokens" && isLoadingWalletTokens && (
+                    <p className="text-center text-sm text-muted-foreground py-4">Loading your tokens...</p>
+                )}
+                {activeTab === "myTokens" && !isLoadingWalletTokens && walletTokens.length === 0 && (
+                    <p className="text-center text-sm text-muted-foreground py-4">No tokens found in your wallet.</p>
+                )}
+                
                 {filteredList.map((token) => (
-                    <TokenModalRow key={token.mintAddress} token={token} onSelect={handleSelect} />
+                    <TokenModalRow key={`${token.mintAddress}-${activeTab}`} token={token} onSelect={handleSelect} />
                 ))}
             </div>
             <button onClick={onClose} className="absolute top-3 right-3 text-muted-foreground hover:text-foreground">
@@ -178,8 +189,39 @@ export const CreatePool: React.FC<{ sdk: LiquidityBookServices; onPoolCreated: (
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectingFor, setSelectingFor] = useState<"base" | "quote" | null>(null);
+  
   const [walletTokens, setWalletTokens] = useState<TokenInfo[]>([]);
   const [isLoadingWalletTokens, setIsLoadingWalletTokens] = useState(false);
+  const [hasFetchedWalletTokens, setHasFetchedWalletTokens] = useState(false);
+
+  const fetchWalletTokens = useCallback(async () => {
+    if (!publicKey) return;
+    setIsLoadingWalletTokens(true);
+    try {
+      const tokenAccounts = await connection.getParsedTokenAccountsByOwner(publicKey, { programId: TOKEN_PROGRAM_ID });
+      const tokenPromises = tokenAccounts.value
+        .filter(accountInfo => {
+          const parsedInfo = accountInfo.account.data.parsed.info;
+          return parsedInfo.tokenAmount.uiAmount > 0 && parsedInfo.tokenAmount.decimals > 0;
+        })
+        .map(async (accountInfo) => {
+          try {
+            return await getTokenInfo(accountInfo.account.data.parsed.info.mint);
+          } catch (e) {
+            console.error(`Could not get token info for mint ${accountInfo.account.data.parsed.info.mint}`, e);
+            return null;
+          }
+        });
+      const tokens = (await Promise.all(tokenPromises)).filter((t): t is TokenInfo => t !== null);
+      setWalletTokens(tokens);
+    } catch (error) {
+      console.error("Failed to fetch wallet tokens:", error);
+      setWalletTokens([]);
+    } finally {
+      setIsLoadingWalletTokens(false);
+      setHasFetchedWalletTokens(true);
+    }
+  }, [publicKey, connection]);
 
   const mintsToDisableForModal = useMemo(() => {
     const otherToken = selectingFor === "base" ? quoteToken : baseToken;
@@ -189,6 +231,9 @@ export const CreatePool: React.FC<{ sdk: LiquidityBookServices; onPoolCreated: (
   const openModal = (type: "base" | "quote") => {
     setSelectingFor(type);
     setIsModalOpen(true);
+    if (!hasFetchedWalletTokens && !isLoadingWalletTokens) {
+      fetchWalletTokens();
+    }
   };
   
   const handleSelectToken = (token: TokenInfo) => {
@@ -326,7 +371,7 @@ export const CreatePool: React.FC<{ sdk: LiquidityBookServices; onPoolCreated: (
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 30 }}
-            onClick={(e: { stopPropagation: () => any; }) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
         >
             <Card className="w-full max-w-lg">
                 <CardHeader>
@@ -371,9 +416,9 @@ export const CreatePool: React.FC<{ sdk: LiquidityBookServices; onPoolCreated: (
                     </div>
                     {statusMessage && (
                         <Alert variant={statusMessage.startsWith("Error:") ? "destructive" : "default"}>
-                            <AlertTriangle className="h-4 w-4" />
+                            {statusMessage.startsWith("Error:") && <AlertTriangle className="h-4 w-4" />}
                             <AlertTitle>{statusMessage.startsWith("Error:") ? "Error" : "Status"}</AlertTitle>
-                            <AlertDescription>{statusMessage.replace("Error: ", "")}</AlertDescription>
+                            <AlertDescription>{statusMessage.replace(/Error: /g, "")}</AlertDescription>
                         </Alert>
                     )}
                 </CardContent>
