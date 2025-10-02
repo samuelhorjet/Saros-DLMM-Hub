@@ -1,4 +1,5 @@
 // src/components/CreatePool.tsx
+"use client";
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { LiquidityBookServices } from "@saros-finance/dlmm-sdk";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";

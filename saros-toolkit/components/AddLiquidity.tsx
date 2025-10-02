@@ -1,4 +1,5 @@
 // src/components/AddLiquidity.tsx
+"use client";
 import React, { useEffect, useState } from 'react';
 import { LiquidityBookServices, LiquidityShape } from '@saros-finance/dlmm-sdk';
 import { PublicKey, Keypair, Transaction, LAMPORTS_PER_SOL } from '@solana/web3.js';

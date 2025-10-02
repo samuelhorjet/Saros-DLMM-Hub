@@ -1,4 +1,5 @@
 // src/components/PoolList.tsx
+"use client";
 import React, { useState, useMemo, useEffect } from "react";
 import { CreatePool } from "./CreatePool";
 import { LiquidityBookServices } from "@saros-finance/dlmm-sdk";
