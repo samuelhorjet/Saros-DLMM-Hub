@@ -30,14 +30,16 @@ export const RemoveLiquidityModal: React.FC<{
     }, [isOpen]);
 
     const handleRemove = async () => {
-        if (!positionToRemove || !publicKey || !sendTransaction || !sdk.connection) return;
+        if (!positionToRemove || !publicKey || !sendTransaction || !sdk.connection) {
+            return;
+        }
 
         setIsProcessing(true);
         setStatus('Building transaction...');
         try {
             const { position, baseToken, quoteToken, poolAddress, poolDetails } = positionToRemove;
             
-            const { txs } = await sdk.removeMultipleLiquidity({
+            const { txs, txCreateAccount, txCloseAccount } = await sdk.removeMultipleLiquidity({
                 payer: publicKey,
                 pair: new PublicKey(poolAddress),
                 tokenMintX: new PublicKey(baseToken.mintAddress),
@@ -52,19 +54,33 @@ export const RemoveLiquidityModal: React.FC<{
                 }],
             });
 
-            if (txs.length === 0) throw new Error("No transactions were generated to remove liquidity.");
+            const allTxs: Transaction[] = [];
+            if (txCreateAccount) allTxs.push(txCreateAccount);
+            allTxs.push(...txs);
+            if (txCloseAccount) allTxs.push(txCloseAccount);
 
-            const { blockhash, lastValidBlockHeight } = await sdk.connection.getLatestBlockhash();
-            txs.forEach(tx => {
+            if (allTxs.length === 0) {
+                throw new Error("No transactions were generated to remove liquidity.");
+            }
+
+            const { blockhash } = await sdk.connection.getLatestBlockhash();
+            allTxs.forEach(tx => {
                 tx.recentBlockhash = blockhash;
                 tx.feePayer = publicKey;
             });
             
-            setStatus('Please approve transaction...');
-            const signature = await sendTransaction(txs[0], sdk.connection);
-            
-            setStatus('Waiting for confirmation...');
-            await sdk.connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, 'confirmed');
+            // Sequentially send and confirm each transaction
+            for (let i = 0; i < allTxs.length; i++) {
+                const tx = allTxs[i];
+                const statusSuffix = allTxs.length > 1 ? ` (${i + 1}/${allTxs.length})` : '';
+
+                setStatus(`Please approve transaction${statusSuffix}...`);
+                const signature = await sendTransaction(tx, sdk.connection);
+                
+                setStatus(`Confirming transaction${statusSuffix}...`);
+                const { blockhash, lastValidBlockHeight } = await sdk.connection.getLatestBlockhash();
+                await sdk.connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, 'confirmed');
+            }
             
             setStatus('Success! Liquidity removed.');
             setTimeout(() => {
@@ -84,7 +100,7 @@ export const RemoveLiquidityModal: React.FC<{
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80" onClick={onClose}>
-            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} onClick={(e: { stopPropagation: () => any; }) => e.stopPropagation()}>
+            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} onClick={(e) => e.stopPropagation()}>
                 <Card className="w-full max-w-md">
                     <CardHeader>
                         <CardTitle>Remove All Liquidity</CardTitle>

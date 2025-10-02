@@ -34,11 +34,19 @@ export const BurnPositionModal: React.FC<{
     const handleBurn = async () => {
         if (!positionToBurn || !publicKey || !sendTransaction) return;
 
+        const totalLiquidity = positionToBurn.position.liquidityShares.reduce((acc, current) => acc + BigInt(current), BigInt(0));
+        if (totalLiquidity > BigInt(0)) {
+            setStatus("Error: Cannot burn a position that still contains liquidity.");
+            return;
+        }
+
         setIsProcessing(true);
         setStatus('Building transaction to burn NFT...');
         try {
             // @ts-ignore
-            if (!sdk.provider) throw new Error("SDK provider not initialized.");
+            if (!sdk.provider) {
+                throw new Error("SDK provider not initialized. Please ensure the SDK is created correctly on the parent page.");
+            }
             
             // @ts-ignore
             const program = new Program(liquidityBookIdl as Idl, new PublicKey(liquidityBookIdl.address), sdk.provider);
@@ -84,9 +92,10 @@ export const BurnPositionModal: React.FC<{
 
     if (!isOpen || !positionToBurn) return null;
 
+    // --- Using the superior UI from the AI-generated file ---
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80" onClick={onClose}>
-            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} onClick={(e: { stopPropagation: () => any; }) => e.stopPropagation()}>
+            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} onClick={(e) => e.stopPropagation()}>
                 <Card className="w-full max-w-md">
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2"><Trash2 className="h-5 w-5 text-destructive" /> Burn Position</CardTitle>

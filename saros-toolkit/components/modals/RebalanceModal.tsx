@@ -61,52 +61,82 @@ export const RebalanceModal: React.FC<{
             setStatus("Error: Please set a valid new price range.");
             return;
         }
+
         setIsProcessing(true);
         try {
             const { position, baseToken, quoteToken, poolDetails, poolAddress } = positionToRebalance;
+            const pairPubKey = new PublicKey(poolAddress);
             
+            // --- Step 1: Remove all liquidity from the old position (with bug fix) ---
             setStatus('Step 1/3: Removing liquidity...');
-            const { txs: removeTxs } = await sdk.removeMultipleLiquidity({
-                payer: publicKey, pair: new PublicKey(poolAddress), tokenMintX: new PublicKey(baseToken.mintAddress),
+            const { txs: removeTxs, txCreateAccount, txCloseAccount } = await sdk.removeMultipleLiquidity({
+                payer: publicKey, pair: pairPubKey, tokenMintX: new PublicKey(baseToken.mintAddress),
                 tokenMintY: new PublicKey(quoteToken.mintAddress), activeId: poolDetails.activeId, type: 'removeBoth',
                 maxPositionList: [{ position: position.position, positionMint: position.positionMint, start: position.lowerBinId, end: position.upperBinId }],
             });
-            const { blockhash: bh1, lastValidBlockHeight: lvh1 } = await sdk.connection.getLatestBlockhash();
-            removeTxs[0].recentBlockhash = bh1; removeTxs[0].feePayer = publicKey;
-            const sig1 = await sendTransaction(removeTxs[0], sdk.connection);
-            await sdk.connection.confirmTransaction({ signature: sig1, blockhash: bh1, lastValidBlockHeight: lvh1 }, 'confirmed');
-            
+
+            const allRemoveTxs: Transaction[] = [];
+            if (txCreateAccount) allRemoveTxs.push(txCreateAccount);
+            allRemoveTxs.push(...removeTxs);
+            if (txCloseAccount) allRemoveTxs.push(txCloseAccount);
+
+            if (allRemoveTxs.length === 0) {
+                 throw new Error("Failed to generate any transactions to remove liquidity.");
+            }
+
+            for (let i = 0; i < allRemoveTxs.length; i++) {
+                const tx = allRemoveTxs[i];
+                const statusSuffix = allRemoveTxs.length > 1 ? ` (${i + 1}/${allRemoveTxs.length})` : '';
+                setStatus(`Step 1/3: Approving remove transaction${statusSuffix}...`);
+
+                const { blockhash, lastValidBlockHeight } = await sdk.connection.getLatestBlockhash();
+                tx.recentBlockhash = blockhash;
+                tx.feePayer = publicKey;
+
+                const signature = await sendTransaction(tx, sdk.connection);
+                await sdk.connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, 'confirmed');
+            }
+
+            // --- Step 2: Create a new position NFT in the new range ---
             setStatus('Step 2/3: Creating new position...');
             const lowerBinId = getIdFromPrice(Number(minPrice), poolDetails.binStep, baseToken.decimals, quoteToken.decimals);
             const upperBinId = getIdFromPrice(Number(maxPrice), poolDetails.binStep, baseToken.decimals, quoteToken.decimals);
             const newPositionMint = Keypair.generate();
             const createPosTx = new Transaction();
+            
             await sdk.createPosition({
-                pair: new PublicKey(poolAddress), payer: publicKey, relativeBinIdLeft: lowerBinId - poolDetails.activeId,
+                pair: pairPubKey, payer: publicKey, relativeBinIdLeft: lowerBinId - poolDetails.activeId,
                 relativeBinIdRight: upperBinId - poolDetails.activeId, binArrayIndex: Math.floor(lowerBinId / 256),
                 positionMint: newPositionMint.publicKey, transaction: createPosTx,
             });
+
             const { blockhash: bh2, lastValidBlockHeight: lvh2 } = await sdk.connection.getLatestBlockhash();
-            createPosTx.recentBlockhash = bh2; createPosTx.feePayer = publicKey;
+            createPosTx.recentBlockhash = bh2;
+            createPosTx.feePayer = publicKey;
             const sig2 = await sendTransaction(createPosTx, sdk.connection, { signers: [newPositionMint] });
             await sdk.connection.confirmTransaction({ signature: sig2, blockhash: bh2, lastValidBlockHeight: lvh2 }, 'confirmed');
             
+            // --- Step 3: Deposit the withdrawn liquidity into the new position ---
             setStatus('Step 3/3: Depositing liquidity...');
             const addLiqTx = new Transaction();
             await sdk.addLiquidityIntoPosition({
-                positionMint: newPositionMint.publicKey, payer: publicKey, pair: new PublicKey(poolAddress), transaction: addLiqTx,
+                positionMint: newPositionMint.publicKey, payer: publicKey, pair: pairPubKey, transaction: addLiqTx,
                 liquidityDistribution: createUniformDistribution({ shape: LiquidityShape.Spot, binRange: [lowerBinId, upperBinId] }),
-                amountX: Number(BigInt("999999999999999999")), amountY: Number(BigInt("999999999999999999")),
-                binArrayLower: await sdk.getBinArray({ binArrayIndex: Math.floor(lowerBinId / 256), pair: new PublicKey(poolAddress) }),
-                binArrayUpper: await sdk.getBinArray({ binArrayIndex: Math.floor(upperBinId / 256), pair: new PublicKey(poolAddress) })
+                amountX: Number.MAX_SAFE_INTEGER, // Use max available wallet balance
+                amountY: Number.MAX_SAFE_INTEGER, // Use max available wallet balance
+                binArrayLower: await sdk.getBinArray({ binArrayIndex: Math.floor(lowerBinId / 256), pair: pairPubKey }),
+                binArrayUpper: await sdk.getBinArray({ binArrayIndex: Math.floor(upperBinId / 256), pair: pairPubKey })
             });
+
             const { blockhash: bh3, lastValidBlockHeight: lvh3 } = await sdk.connection.getLatestBlockhash();
-            addLiqTx.recentBlockhash = bh3; addLiqTx.feePayer = publicKey;
+            addLiqTx.recentBlockhash = bh3;
+            addLiqTx.feePayer = publicKey;
             const sig3 = await sendTransaction(addLiqTx, sdk.connection);
             await sdk.connection.confirmTransaction({ signature: sig3, blockhash: bh3, lastValidBlockHeight: lvh3 }, 'confirmed');
             
             setStatus('Success! Rebalance complete.');
             setTimeout(() => { onSuccess(); onClose(); }, 2000);
+
         } catch (error: any) {
             console.error("Rebalance failed:", error);
             setStatus(`Error: ${error.message}`);
@@ -116,11 +146,10 @@ export const RebalanceModal: React.FC<{
     };
 
     if (!isOpen || !positionToRebalance) return null;
-    const { baseToken, quoteToken } = positionToRebalance;
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80" onClick={onClose}>
-             <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} onClick={(e: { stopPropagation: () => any; }) => e.stopPropagation()}>
+             <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} onClick={(e) => e.stopPropagation()}>
                 <Card className="w-full max-w-lg">
                     <CardHeader>
                         <CardTitle>Rebalance Position</CardTitle>
@@ -129,11 +158,11 @@ export const RebalanceModal: React.FC<{
                     <CardContent className="space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                                <label className="text-xs font-medium">New Min Price</label>
+                                <label className="text-xs font-medium">New Min Price ({positionToRebalance.quoteToken.symbol})</label>
                                 <Input type="number" value={minPrice} onChange={e => setMinPrice(e.target.value)} placeholder="0.0" />
                             </div>
                             <div>
-                                <label className="text-xs font-medium">New Max Price</label>
+                                <label className="text-xs font-medium">New Max Price ({positionToRebalance.quoteToken.symbol})</label>
                                 <Input type="number" value={maxPrice} onChange={e => setMaxPrice(e.target.value)} placeholder="0.0" />
                             </div>
                         </div>
