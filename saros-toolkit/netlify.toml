@@ -1,5 +1,4 @@
 [build]
- base = "saros-toolkit/saros-toolkit"
   command = "npm run build"
   publish = ".next"
 
