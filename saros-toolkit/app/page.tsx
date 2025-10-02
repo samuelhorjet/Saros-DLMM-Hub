@@ -1,214 +1,159 @@
-// src/page.tsx
+// src/app/page.tsx
 "use client";
-import React, { useState, useMemo, useEffect } from "react";
-import { LiquidityBookServices, MODE } from "@saros-finance/dlmm-sdk";
-import { PoolList } from "@/components/PoolList";
-import { PoolDetails } from "@/components/PoolDetails";
-import { Connection, PublicKey } from "@solana/web3.js";
-import { getPriceFromId } from "@saros-finance/dlmm-sdk/utils/price";
-import dynamic from "next/dynamic";
-import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import React, { useEffect } from "react";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { useRouter } from "next/navigation";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
-import { getTokenInfo } from "@/utils/token";
-import { AnchorProvider, setProvider } from "@coral-xyz/anchor";
-import { Dashboard } from "@/components/Dashboard";
-// --- 1. IMPORT ROUTER HOOKS ---
-import { useRouter, useSearchParams } from "next/navigation";
+import { motion } from "framer-motion";
+import { BarChart, Layers, Zap } from "lucide-react";
 
-const WalletProvider = dynamic(
-  () => import("@/components/walletContextProvider").then((mod) => mod.WalletContextProvider),
-  { ssr: false }
-);
-
-// --- AppContent Component ---
-const AppContent = () => {
-  const { connection } = useConnection();
-  const wallet = useWallet();
-  const { publicKey, connected } = wallet;
-
-  // --- 2. INITIALIZE ROUTER AND SEARCH PARAMS ---
+const HomeContent = () => {
+  const { connected } = useWallet();
   const router = useRouter();
-  const searchParams = useSearchParams();
-
-  // Determine active view and selected pool from URL
-  const selectedPool = searchParams.get('pool');
-  const activeView = selectedPool ? 'pool-details' : (searchParams.get('view') || 'dashboard');
-
-  const [pools, setPools] = useState<any[]>([]);
-  const [loadingText, setLoadingText] = useState("Please connect your wallet...");
-
-  const sdk = useMemo(() => {
-    if (!connected || !wallet || !wallet.publicKey) return null;
-    const provider = new AnchorProvider(connection, wallet as any, AnchorProvider.defaultOptions());
-    setProvider(provider);
-    const sdkInstance = new LiquidityBookServices({ mode: MODE.DEVNET });
-    sdkInstance.connection = connection;
-    return sdkInstance;
-  }, [connected, connection, wallet]);
-
-  const fetchAndFilterPools = async (forceRefresh: boolean = false) => {
-    // ... (fetchAndFilterPools function remains unchanged)
-    if (!sdk) return;
-    try {
-      if (!forceRefresh) {
-        const cachedPools = sessionStorage.getItem("cachedPools");
-        if (cachedPools) {
-          setPools(JSON.parse(cachedPools));
-          setLoadingText("");
-          return;
-        }
-      }
-      setLoadingText("Fetching all pool addresses...");
-      const allPoolAddresses = await sdk.fetchPoolAddresses();
-      const uniquePoolAddresses = [...new Set(allPoolAddresses)];
-
-      let allFetchedPools: any[] = [];
-      const BATCH_SIZE = 8;
-      for (let i = 0; i < uniquePoolAddresses.length; i += BATCH_SIZE) {
-        const batchAddresses = uniquePoolAddresses.slice(i, i + BATCH_SIZE);
-        setLoadingText(`Fetching details for pools (${i + batchAddresses.length}/${uniquePoolAddresses.length})`);
-
-        const batchPromises = batchAddresses.map(async (address) => {
-          try {
-            const metadata = (await sdk.fetchPoolMetadata(address)) as any;
-            const pairAccount = await sdk.getPairAccount(new PublicKey(address));
-            
-            if (!metadata || !pairAccount) return null;
-
-            const baseReserve = Number(metadata.baseReserve || 0);
-            const quoteReserve = Number(metadata.quoteReserve || 0);
-            const baseTokenInfo = await getTokenInfo(metadata.baseMint);
-            const quoteTokenInfo = await getTokenInfo(metadata.quoteMint);
-            
-            const { activeId, binStep } = pairAccount;
-            const price = getPriceFromId(binStep, activeId, baseTokenInfo.decimals, quoteTokenInfo.decimals);
-            const liquidity = baseReserve + quoteReserve;
-
-            return {
-              address,
-              baseSymbol: baseTokenInfo.symbol,
-              quoteSymbol: quoteTokenInfo.symbol,
-              baseLogoURI: baseTokenInfo.logoURI,
-              quoteLogoURI: quoteTokenInfo.logoURI,
-              price: isNaN(price) ? 0 : price,
-              liquidity,
-            };
-          } catch (e) {
-            console.error(`Failed to process pool ${address}:`, e);
-            return null;
-          }
-        });
-        allFetchedPools.push(
-          ...(await Promise.all(batchPromises)).filter((p) => p !== null)
-        );
-      }
-      
-      sessionStorage.setItem("cachedPools", JSON.stringify(allFetchedPools));
-      setPools(allFetchedPools);
-    } catch (err) {
-      console.error("Failed to fetch pools:", err);
-      setLoadingText("An error occurred. Check console for details.");
-    } finally {
-      setLoadingText("");
-    }
-  };
-
-  const handleRefresh = async () => {
-    setLoadingText("Refreshing pool list...");
-    setPools([]);
-    sessionStorage.removeItem("cachedPools");
-    await fetchAndFilterPools(true);
-  };
 
   useEffect(() => {
-    if (connected && sdk) {
-      if (activeView === 'pools') {
-        fetchAndFilterPools();
-      } else {
-        setLoadingText("");
-      }
-    } else if (!connected) {
-      setLoadingText("Please connect your wallet...");
-      setPools([]);
-      router.push('/'); // Reset to dashboard on disconnect
+    if (connected) {
+      router.push("/dashboard");
     }
-  }, [connected, sdk, activeView]);
+  }, [connected, router]);
 
-  // --- 3. UPDATE NAVIGATION HANDLERS ---
-  const handleNavigation = (section: 'dashboard' | 'pools' | 'positions') => {
-    if (section === 'positions') {
-      router.push('/positions');
-    } else {
-      router.push(`/?view=${section}`);
-    }
-  };
-  
-  const handlePoolSelect = (address: string) => {
-      router.push(`/?pool=${address}`);
+  const featureVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: {
+      opacity: 1,
+      y: 0,
+      transition: {
+        staggerChildren: 0.1,
+      },
+    },
   };
 
-  const handleBackToPools = () => {
-      router.push('/?view=pools');
-  };
-
-  const renderMainContent = () => {
-    if (!connected) return <p>Please connect your wallet to continue.</p>;
-    if (!sdk) return <p>Initializing SDK...</p>;
-
-    if (selectedPool) {
-        return (
-            <PoolDetails
-                sdk={sdk}
-                poolAddress={selectedPool}
-                userPublicKey={publicKey!}
-                onBack={handleBackToPools}
-            />
-        );
-    }
-    
-    switch (activeView) {
-      case 'pools':
-        if (loadingText) return <p>{loadingText}</p>;
-        return (
-            <PoolList
-                pools={pools}
-                onPoolSelect={handlePoolSelect}
-                sdk={sdk}
-                onRefresh={handleRefresh}
-                loading={!!loadingText}
-            />
-        );
-      case 'dashboard':
-      default:
-        return <Dashboard sdk={sdk} onNavigate={handleNavigation} />;
-    }
+  const itemVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { opacity: 1, y: 0 },
   };
 
   return (
-    <div style={{ padding: "20px", fontFamily: "sans-serif" }}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1>DLMM Liquidity DApp (Devnet)</h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-          <button onClick={() => handleNavigation('dashboard')} style={{ all: 'unset', cursor: 'pointer', padding: '8px 12px' }}>Dashboard</button>
-          <button onClick={() => handleNavigation('pools')} style={{ all: 'unset', cursor: 'pointer', padding: '8px 12px' }}>Pools</button>
-          <a href="/positions" style={{ padding: '8px 12px', border: '1px solid #444', borderRadius: '4px', textDecoration: 'none', color: 'white' }}>My Positions</a>
-          <WalletMultiButton />
+    <div className="flex min-h-screen flex-col bg-gradient-to-b from-background to-secondary/50">
+      <header className="container mx-auto flex h-20 items-center justify-between px-4">
+        <div className="flex items-center gap-2">
+          {/* You can place your logo here */}
+          <Layers className="h-6 w-6 text-primary" />
+          <span className="text-xl font-bold">Saros DLMM</span>
         </div>
+        <WalletMultiButton className="rounded-lg px-4 py-2 font-semibold transition-transform duration-200 hover:scale-105" />
       </header>
-      <hr style={{ margin: "20px 0" }} />
-      <main>
-        {renderMainContent()}
+
+      <main className="flex-1">
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, ease: "easeInOut" }}
+          className="container mx-auto flex flex-col items-center justify-center px-4 py-16 text-center md:py-24"
+        >
+          <h1 className="text-4xl font-extrabold tracking-tight md:text-6xl lg:text-7xl">
+            Concentrated Liquidity,
+            <br />
+            <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+              Maximized Returns.
+            </span>
+          </h1>
+          <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground md:text-xl">
+            Experience unparalleled capital efficiency. Create and manage
+            liquidity positions on Solana with the power of the Saros DLMM SDK.
+          </p>
+          <motion.div
+            className="mt-8"
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.5, delay: 0.3 }}
+          >
+            <WalletMultiButton className="rounded-lg px-6 py-3 text-lg font-bold shadow-lg transition-transform duration-200 hover:scale-105" />
+          </motion.div>
+        </motion.div>
+
+        <motion.section
+          variants={featureVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.5 }}
+          className="container mx-auto max-w-5xl px-4 py-16"
+        >
+          <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
+            <motion.div
+              variants={itemVariants}
+              className="flex flex-col items-center text-center"
+            >
+              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
+                <BarChart className="h-7 w-7 text-primary" />
+              </div>
+              <h3 className="text-xl font-semibold">High Capital Efficiency</h3>
+              <p className="mt-2 text-muted-foreground">
+                Concentrate your liquidity in active price ranges to maximize
+                your fee earnings from every trade.
+              </p>
+            </motion.div>
+            <motion.div
+              variants={itemVariants}
+              className="flex flex-col items-center text-center"
+            >
+              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
+                <Layers className="h-7 w-7 text-primary" />
+              </div>
+              <h3 className="text-xl font-semibold">
+                Flexible Position Management
+              </h3>
+              <p className="mt-2 text-muted-foreground">
+                Easily create, adjust, and rebalance your liquidity positions to
+                adapt to changing market conditions.
+              </p>
+            </motion.div>
+            <motion.div
+              variants={itemVariants}
+              className="flex flex-col items-center text-center"
+            >
+              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
+                <Zap className="h-7 w-7 text-primary" />
+              </div>
+              <h3 className="text-xl font-semibold">
+                Lightning-Fast Transactions
+              </h3>
+              <p className="mt-2 text-muted-foreground">
+                Built on Solana for near-instant transaction speeds and
+                incredibly low fees.
+              </p>
+            </motion.div>
+            <motion.div
+              id="video-tutorial"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.5, delay: 0.2 }}
+              className="max-w-4xl mx-auto"
+            >
+              <h2 className="text-3xl font-bold font-serif mb-6">
+                How It Works
+              </h2>
+              <div className="aspect-w-16 aspect-h-9 bg-gray-900 rounded-lg shadow-xl overflow-hidden">
+                {/* Replace with your actual video embed code */}
+                <iframe
+                  className="w-full h-full"
+                  src="https://www.youtube.com/embed/dQw4w9WgXcQ" // Placeholder video
+                  title="DApp Tutorial"
+                  frameBorder="0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                ></iframe>
+              </div>
+            </motion.div>
+          </div>
+        </motion.section>
       </main>
     </div>
   );
 };
 
-function App() {
-  return (
-    <WalletProvider>
-      <AppContent />
-    </WalletProvider>
-  );
+function HomePage() {
+  return <HomeContent />;
 }
 
-export default App;
+export default HomePage;

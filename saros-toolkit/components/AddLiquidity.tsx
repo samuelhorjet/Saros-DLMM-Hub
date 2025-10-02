@@ -5,6 +5,13 @@ import { PublicKey, Keypair, Transaction, LAMPORTS_PER_SOL } from '@solana/web3.
 import { getIdFromPrice } from '@saros-finance/dlmm-sdk/utils/price';
 import { createUniformDistribution } from '@saros-finance/dlmm-sdk/utils';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Slider } from '@/components/ui/slider';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Info, Loader2, AlertTriangle } from 'lucide-react';
 
 interface AddLiquidityProps {
     sdk: LiquidityBookServices;
@@ -19,7 +26,6 @@ interface AddLiquidityProps {
 }
 
 export const AddLiquidity: React.FC<AddLiquidityProps> = ({ sdk, poolAddress, userPublicKey, baseTokenInfo, quoteTokenInfo, binStep, activeId, price, onLiquidityAdded }) => {
-    // --- State Management ---
     const [amountA, setAmountA] = useState('');
     const [amountB, setAmountB] = useState('');
     const [minPrice, setMinPrice] = useState('');
@@ -31,45 +37,40 @@ export const AddLiquidity: React.FC<AddLiquidityProps> = ({ sdk, poolAddress, us
     const [usePreflightCheck, setUsePreflightCheck] = useState(true);
     const [rangePercentage, setRangePercentage] = useState<number>(10);
     
-    // State for live input validation
     const [isAmountAInvalid, setIsAmountAInvalid] = useState(false);
     const [isAmountBInvalid, setIsAmountBInvalid] = useState(false);
 
     const { connection } = useConnection();
     const { sendTransaction } = useWallet();
 
-    // --- Data Fetching ---
     useEffect(() => {
         const fetchBalances = async () => {
             if (!userPublicKey) return;
             setBaseTokenBalance(null);
             setQuoteTokenBalance(null);
             
-            // This is the standard SPL Token Program ID
             const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
             
-            const tokenAccounts = await connection.getParsedTokenAccountsByOwner(userPublicKey, { programId: TOKEN_PROGRAM_ID });
-            
-            const findBalance = (mint: string, isBase: boolean) => {
+            const findBalance = async (mint: string, isBase: boolean) => {
                 if (mint === 'So11111111111111111111111111111111111111112') {
-                    connection.getBalance(userPublicKey).then(solBalance => {
-                        const availableSol = Math.max(0, (solBalance / LAMPORTS_PER_SOL) - 0.01); // Leave a little for gas
-                        isBase ? setBaseTokenBalance(availableSol.toFixed(6)) : setQuoteTokenBalance(availableSol.toFixed(6));
-                    });
+                    const solBalance = await connection.getBalance(userPublicKey);
+                    const availableSol = Math.max(0, (solBalance / LAMPORTS_PER_SOL) - 0.01);
+                    isBase ? setBaseTokenBalance(availableSol.toFixed(6)) : setQuoteTokenBalance(availableSol.toFixed(6));
                 } else {
-                    const account = tokenAccounts.value.find(acc => acc.account.data.parsed.info.mint === mint);
+                    const tokenAccounts = await connection.getParsedTokenAccountsByOwner(userPublicKey, { mint: new PublicKey(mint) });
+                    const account = tokenAccounts.value[0];
                     const balance = account ? account.account.data.parsed.info.tokenAmount.uiAmountString : '0.0';
                     isBase ? setBaseTokenBalance(balance) : setQuoteTokenBalance(balance);
                 }
             };
-            findBalance(baseTokenInfo.mintAddress, true);
-            findBalance(quoteTokenInfo.mintAddress, false);
+            await Promise.all([
+                findBalance(baseTokenInfo.mintAddress, true),
+                findBalance(quoteTokenInfo.mintAddress, false)
+            ]);
         };
         fetchBalances();
     }, [userPublicKey, baseTokenInfo, quoteTokenInfo, connection]);
     
-    // --- UI Synchronization ---
-    // Syncs the price inputs whenever the slider or percentage buttons are changed.
     useEffect(() => {
         if (!price || price <= 0) return;
         const percentDecimal = rangePercentage / 100;
@@ -79,105 +80,68 @@ export const AddLiquidity: React.FC<AddLiquidityProps> = ({ sdk, poolAddress, us
         setMaxPrice(newMax.toFixed(quoteTokenInfo.decimals));
     }, [rangePercentage, price, quoteTokenInfo.decimals]);
 
-    // --- Helper Functions ---
     const toLamports = (amountStr: string, decimals: number): bigint => {
         if (!amountStr) return BigInt(0);
         let [integer, fraction = ''] = amountStr.split('.');
-        if (fraction.length > decimals) { fraction = fraction.substring(0, decimals); }
-        fraction = fraction.padEnd(decimals, '0');
+        fraction = fraction.substring(0, decimals).padEnd(decimals, '0');
         return BigInt(integer + fraction);
     };
 
-    // --- Event Handlers ---
-    const handleAmountAChange = (value: string) => {
-        setAmountA(value);
-        if (baseTokenBalance && parseFloat(value) > parseFloat(baseTokenBalance)) {
-            setIsAmountAInvalid(true);
+    const handleAmountChange = (value: string, balance: string | null, setAmount: (val: string) => void, setInvalid: (val: boolean) => void) => {
+        setAmount(value);
+        if (balance && parseFloat(value) > parseFloat(balance)) {
+            setInvalid(true);
         } else {
-            setIsAmountAInvalid(false);
+            setInvalid(false);
         }
     };
     
-    const handleAmountBChange = (value: string) => {
-        setAmountB(value);
-        if (quoteTokenBalance && parseFloat(value) > parseFloat(quoteTokenBalance)) {
-            setIsAmountBInvalid(true);
-        } else {
-            setIsAmountBInvalid(false);
-        }
-    };
-
-    const handlePriceInputBlur = (value: string, setter: React.Dispatch<React.SetStateAction<string>>) => {
-        if (value) {
-            setter(Number(value).toFixed(quoteTokenInfo.decimals));
-        }
-    };
-
-    /**
-     * This is the main function for adding liquidity. It follows a robust two-transaction process.
-     * 1. Transaction 1: Creates the Position NFT. This requires passing bin IDs relative to the active bin.
-     * 2. Transaction 2: Deposits the tokens into the newly created position.
-     * A pre-flight check is included to prevent an on-chain error if the user's price range is too narrow.
-     */
-    const handleAddLiquidity = async (event: React.FormEvent): Promise<void> => {
+    const handleAddLiquidity = async (event: React.FormEvent) => {
         event.preventDefault();
-        if (!userPublicKey) { setStatus("Error: Wallet not connected."); return; }
-        if (isAmountAInvalid || isAmountBInvalid) { setStatus("Error: Cannot add more liquidity than you have in your balance."); return; }
+        if (!userPublicKey || isAmountAInvalid || isAmountBInvalid) return;
+
         setIsSubmitting(true);
         setStatus('Starting process...');
 
-        let signature1 = '', finalSignature = '';
-
         try {
-            if (!amountA || !amountB || !minPrice || !maxPrice || Number(minPrice) <= 0 || Number(maxPrice) <= 0) {
-                throw new Error("Please fill all fields with valid numbers.");
+            if (!amountA || !amountB || !minPrice || !maxPrice || Number(minPrice) >= Number(maxPrice)) {
+                throw new Error("Please fill all fields with valid numbers and ensure Min Price is less than Max Price.");
             }
-            if (Number(minPrice) >= Number(maxPrice)) {
-                throw new Error("Min Price must be strictly less than Max Price.");
-            }
-            setStatus('Calculating parameters...');
+
+            setStatus('Calculating price bins...');
             const lowerBinId = getIdFromPrice(Number(minPrice), binStep, baseTokenInfo.decimals, quoteTokenInfo.decimals);
             const upperBinId = getIdFromPrice(Number(maxPrice), binStep, baseTokenInfo.decimals, quoteTokenInfo.decimals);
             
-            // This check is necessary to prevent the "Account already borrowed" error in Transaction 2,
-            // which occurs if both the lower and upper price bins fall into the same on-chain BinArray account.
             const lowerBinArrayIndex = Math.floor(lowerBinId / 256);
             const upperBinArrayIndex = Math.floor(upperBinId / 256);
             if (usePreflightCheck && lowerBinArrayIndex === upperBinArrayIndex) {
-                throw new Error("Pre-flight Check FAILED: Your price range is too narrow. This would cause an on-chain error. Please select a wider range.");
+                throw new Error("Price range is too narrow. This could cause an on-chain error. Please select a wider range.");
             }
             
-            // The `createPosition` instruction requires bin IDs to be relative to the pool's active bin.
-            const relativeBinIdLeft = lowerBinId - activeId;
-            const relativeBinIdRight = upperBinId - activeId;
-
-            const amountX_BigInt = toLamports(amountA, baseTokenInfo.decimals);
-            const amountY_BigInt = toLamports(amountB, quoteTokenInfo.decimals);
+            setStatus('Step 1/2: Creating position...');
             const positionMint = Keypair.generate();
             const pairPubKey = new PublicKey(poolAddress);
 
-            setStatus('Step 1/2: Creating position...');
             const transaction1 = new Transaction();
             await sdk.getBinArray({ binArrayIndex: lowerBinArrayIndex, pair: pairPubKey, payer: userPublicKey, transaction: transaction1 });
             
             await sdk.createPosition({ 
-                pair: pairPubKey, payer: userPublicKey, 
-                relativeBinIdLeft, 
-                relativeBinIdRight, 
+                pair: pairPubKey, 
+                payer: userPublicKey, 
+                relativeBinIdLeft: lowerBinId - activeId, 
+                relativeBinIdRight: upperBinId - activeId, 
                 binArrayIndex: lowerBinArrayIndex, 
-                positionMint: positionMint.publicKey, transaction: transaction1 
+                positionMint: positionMint.publicKey, 
+                transaction: transaction1 
             });
 
-            const { blockhash: blockhash1, lastValidBlockHeight: lastValidBlockHeight1 } = await connection.getLatestBlockhash();
-            transaction1.recentBlockhash = blockhash1; transaction1.feePayer = userPublicKey;
+            const { blockhash: blockhash1, lastValidBlockHeight: lvh1 } = await connection.getLatestBlockhash();
+            transaction1.recentBlockhash = blockhash1; 
+            transaction1.feePayer = userPublicKey;
 
-            // `skipPreflight` is used here because this is a complex transaction that wallet simulations often fail on.
-            signature1 = await sendTransaction(transaction1, connection, { signers: [positionMint], skipPreflight: true });
+            const signature1 = await sendTransaction(transaction1, connection, { signers: [positionMint], skipPreflight: true });
+            await connection.confirmTransaction({ signature: signature1, blockhash: blockhash1, lastValidBlockHeight: lvh1 }, 'confirmed');
             
-            const res1 = await connection.confirmTransaction({ signature: signature1, blockhash: blockhash1, lastValidBlockHeight: lastValidBlockHeight1 }, 'confirmed');
-            if (res1.value.err) { throw new Error(`Transaction 1 Failed On-Chain: ${JSON.stringify(res1.value.err)}`); }
-            console.log("✅ Transaction 1 (Create Position) successful:", signature1);
-
             setStatus('Step 2/2: Depositing liquidity...');
             const transaction2 = new Transaction();
             const liquidityDistribution = createUniformDistribution({ shape: LiquidityShape.Spot, binRange: [lowerBinId, upperBinId] });
@@ -188,107 +152,119 @@ export const AddLiquidity: React.FC<AddLiquidityProps> = ({ sdk, poolAddress, us
                 pair: pairPubKey,
                 transaction: transaction2,
                 liquidityDistribution,
-                amountX: Number(amountX_BigInt),
-                amountY: Number(amountY_BigInt),
+                amountX: Number(toLamports(amountA, baseTokenInfo.decimals)),
+                amountY: Number(toLamports(amountB, quoteTokenInfo.decimals)),
                 binArrayLower: await sdk.getBinArray({ binArrayIndex: lowerBinArrayIndex, pair: pairPubKey }),
                 binArrayUpper: await sdk.getBinArray({ binArrayIndex: upperBinArrayIndex, pair: pairPubKey })
             });
 
-            const { blockhash: blockhash2, lastValidBlockHeight: lastValidBlockHeight2 } = await connection.getLatestBlockhash();
-            transaction2.recentBlockhash = blockhash2; transaction2.feePayer = userPublicKey;
+            const { blockhash: blockhash2, lastValidBlockHeight: lvh2 } = await connection.getLatestBlockhash();
+            transaction2.recentBlockhash = blockhash2; 
+            transaction2.feePayer = userPublicKey;
             
-            setStatus("Please approve final deposit...");
-            finalSignature = await sendTransaction(transaction2, connection, { skipPreflight: true });
+            setStatus("Final approval needed for deposit...");
+            const finalSignature = await sendTransaction(transaction2, connection, { skipPreflight: true });
             
-            setStatus("Waiting for final confirmation...");
-            const res2 = await connection.confirmTransaction({ signature: finalSignature, blockhash: blockhash2, lastValidBlockHeight: lastValidBlockHeight2 }, 'confirmed');
-            if (res2.value.err) { throw new Error(`Transaction 2 Failed On-Chain: ${JSON.stringify(res2.value.err)}`); }
+            setStatus("Confirming final transaction...");
+            await connection.confirmTransaction({ signature: finalSignature, blockhash: blockhash2, lastValidBlockHeight: lvh2 }, 'confirmed');
             
-            setStatus(`🏆 Success! Liquidity added. Final signature: ${finalSignature}`);
-
-            // This is the auto-refresh trigger!
+            setStatus(`Success! Liquidity added. Signature: ${finalSignature.slice(0, 20)}...`);
             onLiquidityAdded(); 
+            setTimeout(() => setStatus(''), 5000);
             
         } catch (error: any) {
-            console.error("--- TRANSACTION FAILED ---", error);
-            let errorMessage = `Error: ${error.message}`;
-            if(finalSignature) errorMessage += ` (Signature: ${finalSignature})`
-            else if(signature1) errorMessage += ` (Signature: ${signature1})`
-            setStatus(errorMessage);
+            console.error("Add liquidity failed:", error);
+            setStatus(`Error: ${error.message}`);
         } finally {
             setIsSubmitting(false);
         }
     };
 
-    // --- Component Render ---
-    return (
-        <div style={{ border: '1px solid #444', padding: '15px', borderRadius: '5px', marginTop: '20px' }}>
-            <h4>Add New Liquidity</h4>
-            <form onSubmit={handleAddLiquidity}>
-                <div style={{ display: 'flex', gap: '20px', marginBottom: '15px' }}>
-                    <div style={{ flex: 1 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <label>{baseTokenInfo.symbol} Amount</label>
-                            <span style={{ fontSize: '12px', color: '#888' }}>Balance: {baseTokenBalance ?? '...'}</span>
-                        </div>
-                        <div style={{ display: 'flex' }}>
-                            <input type="number" value={amountA} onChange={(e) => handleAmountAChange(e.target.value)} placeholder="0.0" style={{...inputStyle, borderTopRightRadius: 0, borderBottomRightRadius: 0, borderColor: isAmountAInvalid ? 'red' : '#444' }} />
-                            <button type="button" onClick={() => handleAmountAChange(baseTokenBalance || '0')} style={{...buttonStyle, width: 'auto', padding: '0 10px', borderTopLeftRadius: 0, borderBottomLeftRadius: 0}}>Max</button>
-                        </div>
-                        {isAmountAInvalid && <p style={{ fontSize: '12px', color: 'red', margin: '5px 0 0 0' }}>Amount exceeds balance</p>}
-                    </div>
-                    <div style={{ flex: 1 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <label>{quoteTokenInfo.symbol} Amount</label>
-                            <span style={{ fontSize: '12px', color: '#888' }}>Balance: {quoteTokenBalance ?? '...'}</span>
-                        </div>
-                        <div style={{ display: 'flex' }}>
-                             <input type="number" value={amountB} onChange={(e) => handleAmountBChange(e.target.value)} placeholder="0.0" style={{...inputStyle, borderTopRightRadius: 0, borderBottomRightRadius: 0, borderColor: isAmountBInvalid ? 'red' : '#444' }} />
-                            <button type="button" onClick={() => handleAmountBChange(quoteTokenBalance || '0')} style={{...buttonStyle, width: 'auto', padding: '0 10px', borderTopLeftRadius: 0, borderBottomLeftRadius: 0}}>Max</button>
-                        </div>
-                        {isAmountBInvalid && <p style={{ fontSize: '12px', color: 'red', margin: '5px 0 0 0' }}>Amount exceeds balance</p>}
-                    </div>
-                </div>
-                <div style={{ display: 'flex', gap: '20px', marginBottom: '10px' }}>
-                    <div style={{ flex: 1 }}>
-                        <label>Min Price ({quoteTokenInfo.symbol} per {baseTokenInfo.symbol})</label>
-                        <input type="number" value={minPrice} onChange={(e) => setMinPrice(e.target.value)} onBlur={(e) => handlePriceInputBlur(e.target.value, setMinPrice)} placeholder="0.0" style={inputStyle} />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                        <label>Max Price ({quoteTokenInfo.symbol} per {baseTokenInfo.symbol})</label>
-                        <input type="number" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} onBlur={(e) => handlePriceInputBlur(e.target.value, setMaxPrice)} placeholder="0.0" style={inputStyle} />
-                    </div>
-                </div>
-                
-                <div style={{ marginBottom: '20px' }}>
-                     <label style={{ fontSize: '12px', color: '#888' }}>Set price range around current price (+/- {rangePercentage}%)</label>
-                    <input type="range" min="1" max="50" value={rangePercentage} onChange={(e) => setRangePercentage(Number(e.target.value))} style={{ width: '100%' }} />
-                    <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginTop: '5px' }}>
-                        <button type="button" onClick={() => setRangePercentage(1)} style={{...buttonStyle, width: 'auto', background: '#333'}}>+/- 1%</button>
-                        <button type="button" onClick={() => setRangePercentage(2)} style={{...buttonStyle, width: 'auto', background: '#333'}}>+/- 2%</button>
-                        <button type="button" onClick={() => setRangePercentage(5)} style={{...buttonStyle, width: 'auto', background: '#333'}}>+/- 5%</button>
-                        <button type="button" onClick={() => setRangePercentage(10)} style={{...buttonStyle, width: 'auto', background: '#333'}}>+/- 10%</button>
-                    </div>
-                </div>
-                
-                <div style={{ marginBottom: '20px', padding: '10px', border: '1px solid #555', borderRadius: '5px' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                        <input type="checkbox" checked={usePreflightCheck} onChange={(e) => setUsePreflightCheck(e.target.checked)} style={{ marginRight: '10px' }} />
-                        Enable Pre-flight Check (Recommended)
-                    </label>
-                    <p style={{ fontSize: '12px', color: '#888', margin: '5px 0 0 0' }}>
-                        Disabling this lets you send transactions with a narrow price range to demonstrate the on-chain "already borrowed" bug.
-                    </p>
-                </div>
+    const isButtonDisabled = isSubmitting || isAmountAInvalid || isAmountBInvalid || !amountA || !amountB || !minPrice || !maxPrice;
 
-                <button type="submit" disabled={isSubmitting} style={buttonStyle}>
-                    {isSubmitting ? 'Processing...' : 'Add Liquidity'}
-                </button>
-                {status && <p style={{ marginTop: '15px' }}>Status: {status}</p>}
+    return (
+        <Card>
+            <form onSubmit={handleAddLiquidity}>
+                <CardHeader>
+                    <CardTitle>Add Liquidity</CardTitle>
+                    <CardDescription>Deposit tokens into a new liquidity position.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                    {/* --- Amounts --- */}
+                    <div className="space-y-2">
+                        <h4 className="font-semibold text-sm">1. Enter Amounts</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <div className="flex justify-between items-center mb-1">
+                                    <label className="text-xs font-medium">{baseTokenInfo.symbol} Amount</label>
+                                    <span className="text-xs text-muted-foreground">Balance: {baseTokenBalance ?? '...'}</span>
+                                </div>
+                                <div className="flex">
+                                    <Input type="number" value={amountA} onChange={(e) => handleAmountChange(e.target.value, baseTokenBalance, setAmountA, setIsAmountAInvalid)} placeholder="0.0" className={`rounded-r-none ${isAmountAInvalid ? 'border-destructive' : ''}`} />
+                                    <Button type="button" variant="outline" onClick={() => handleAmountChange(baseTokenBalance || '0', baseTokenBalance, setAmountA, setIsAmountAInvalid)} className="rounded-l-none">Max</Button>
+                                </div>
+                            </div>
+                             <div>
+                                <div className="flex justify-between items-center mb-1">
+                                    <label className="text-xs font-medium">{quoteTokenInfo.symbol} Amount</label>
+                                    <span className="text-xs text-muted-foreground">Balance: {quoteTokenBalance ?? '...'}</span>
+                                </div>
+                                <div className="flex">
+                                     <Input type="number" value={amountB} onChange={(e) => handleAmountChange(e.target.value, quoteTokenBalance, setAmountB, setIsAmountBInvalid)} placeholder="0.0" className={`rounded-r-none ${isAmountBInvalid ? 'border-destructive' : ''}`} />
+                                    <Button type="button" variant="outline" onClick={() => handleAmountChange(quoteTokenBalance || '0', quoteTokenBalance, setAmountB, setIsAmountBInvalid)} className="rounded-l-none">Max</Button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                     {/* --- Price Range --- */}
+                    <div className="space-y-2">
+                        <h4 className="font-semibold text-sm">2. Set Price Range</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                             <div>
+                                <label className="text-xs font-medium">Min Price ({quoteTokenInfo.symbol} per {baseTokenInfo.symbol})</label>
+                                <Input type="number" value={minPrice} onChange={(e) => setMinPrice(e.target.value)} placeholder="0.0" />
+                            </div>
+                             <div>
+                                <label className="text-xs font-medium">Max Price ({quoteTokenInfo.symbol} per {baseTokenInfo.symbol})</label>
+                                <Input type="number" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} placeholder="0.0" />
+                            </div>
+                        </div>
+                        <div className="pt-4">
+                            <label className="text-xs text-muted-foreground">Set range around current price (+/- {rangePercentage}%)</label>
+                            <Slider value={[rangePercentage]} onValueChange={(val) => setRangePercentage(val[0])} min={1} max={50} step={1} className="my-2" />
+                             <div className="flex justify-center gap-2">
+                                {[1, 5, 10, 25].map(p => (
+                                     <Button key={p} type="button" variant="outline" size="sm" onClick={() => setRangePercentage(p)}>+/- {p}%</Button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                     {/* --- Options --- */}
+                    <div className="space-y-2">
+                         <h4 className="font-semibold text-sm">3. Options</h4>
+                        <div className="flex items-center space-x-2 rounded-md border p-3">
+                            <Checkbox id="preflight-check" checked={usePreflightCheck} onCheckedChange={(checked) => setUsePreflightCheck(!!checked)} />
+                            <label htmlFor="preflight-check" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                Enable Pre-flight Check (Recommended)
+                            </label>
+                        </div>
+                        <p className="text-xs text-muted-foreground px-1">Helps prevent on-chain errors for very narrow price ranges.</p>
+                    </div>
+
+                    {status && (
+                        <Alert variant={status.startsWith("Error:") ? "destructive" : "default"}>
+                           {status.startsWith("Error:") ? <AlertTriangle className="h-4 w-4" /> : <Info className="h-4 w-4" />}
+                            <AlertTitle>{status.startsWith("Error:") ? "Error" : "Status"}</AlertTitle>
+                            <AlertDescription className="break-all">{status.replace("Error:", "")}</AlertDescription>
+                        </Alert>
+                    )}
+                </CardContent>
+                <CardFooter>
+                    <Button type="submit" disabled={isButtonDisabled} className="w-full">
+                        {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing...</> : 'Add Liquidity'}
+                    </Button>
+                </CardFooter>
             </form>
-        </div>
+        </Card>
     );
 };
-
-const inputStyle: React.CSSProperties = { width: '100%', padding: '8px', marginTop: '5px', background: '#222', border: '1px solid #444', borderRadius: '4px', color: 'white', };
-const buttonStyle: React.CSSProperties = { width: '100%', padding: '10px', background: '#3a76f7', border: 'none', borderRadius: '4px', color: 'white', cursor: 'pointer', };

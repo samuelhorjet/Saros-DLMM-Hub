@@ -1,109 +1,53 @@
 // src/components/PoolList.tsx
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { CreatePool } from "./CreatePool";
 import { LiquidityBookServices } from "@saros-finance/dlmm-sdk";
 import { PublicKey } from "@solana/web3.js";
+import { motion, AnimatePresence } from "framer-motion";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { PlusCircle, Search, Copy, RefreshCw } from 'lucide-react';
+import { Skeleton } from "@/components/ui/skeleton";
 
-// --- Styles ---
-const modalOverlayStyle: React.CSSProperties = {
-  position: "fixed",
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  backgroundColor: "rgba(0, 0, 0, 0.75)",
-  display: "flex",
-  justifyContent: "center",
-  alignItems: "center",
-  zIndex: 1000,
-};
-const modalContentStyle: React.CSSProperties = {
-  background: "#1a1a1a",
-  padding: "25px",
-  borderRadius: "8px",
-  width: "90%",
-  maxWidth: "600px",
-  maxHeight: "90vh",
-  overflowY: "auto",
-  position: "relative",
-  border: "1px solid #444",
-};
-const closeButtonStyle: React.CSSProperties = {
-  position: "absolute",
-  top: "10px",
-  right: "15px",
-  background: "transparent",
-  border: "none",
-  color: "white",
-  fontSize: "24px",
-  cursor: "pointer",
-};
-const activeTabStyle: React.CSSProperties = {
-  padding: "8px 16px",
-  cursor: "pointer",
-  background: "#007bff",
-  border: "1px solid #007bff",
-  color: "white",
-  borderRadius: "4px",
-};
-const inactiveTabStyle: React.CSSProperties = {
-  padding: "8px 16px",
-  cursor: "pointer",
-  background: "#333",
-  border: "1px solid #444",
-  color: "#ccc",
-  borderRadius: "4px",
-};
-
-// --- HELPER COMPONENTS FOR LOGOS ---
+// --- HELPER COMPONENTS ---
 
 const logoStyle: React.CSSProperties = {
   width: 28,
   height: 28,
   borderRadius: "50%",
   backgroundColor: "#333",
-  border: "2px solid #1a1a1a",
+  border: "2px solid var(--card)",
 };
 
 const FallbackLogo: React.FC<{ symbol?: string }> = ({ symbol }) => (
-  <div
-    style={{
-      ...logoStyle,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      fontSize: "14px",
-      fontWeight: "bold",
-      color: "white",
-    }}
-  >
+  <div style={{ ...logoStyle, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: "bold", color: "white" }}>
     {symbol ? symbol.charAt(0).toUpperCase() : "?"}
   </div>
 );
 
-const PairLogos: React.FC<{
-  baseLogo?: string;
-  quoteLogo?: string;
-  baseSymbol?: string;
-  quoteSymbol?: string;
-}> = ({ baseLogo, quoteLogo, baseSymbol, quoteSymbol }) => {
+const PairLogos: React.FC<{ baseLogo?: string; quoteLogo?: string; baseSymbol?: string; quoteSymbol?: string; }> = ({ baseLogo, quoteLogo, baseSymbol, quoteSymbol }) => (
+  <div className="flex items-center">
+    {baseLogo ? <img src={baseLogo} alt={baseSymbol} style={logoStyle} /> : <FallbackLogo symbol={baseSymbol} />}
+    {quoteLogo ? <img src={quoteLogo} alt={quoteSymbol} style={{ ...logoStyle, marginLeft: "-10px" }} /> : <FallbackLogo symbol={quoteSymbol} />}
+  </div>
+);
+
+const CopyButton: React.FC<{ textToCopy: string }> = ({ textToCopy }) => {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(textToCopy);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
   return (
-    <div style={{ display: "flex", alignItems: "center" }}>
-      {baseLogo ? (
-        <img src={baseLogo} alt={baseSymbol} style={logoStyle} />
-      ) : (
-        <FallbackLogo symbol={baseSymbol} />
-      )}
-      {quoteLogo ? (
-        <img
-          src={quoteLogo}
-          alt={quoteSymbol}
-          style={{ ...logoStyle, marginLeft: "-10px" }}
-        />
-      ) : (
-        <FallbackLogo symbol={quoteSymbol} />
-      )}
-    </div>
+    <Button variant="ghost" size="icon" onClick={handleCopy} className="h-7 w-7">
+      <Copy className="h-4 w-4" />
+      <span className="sr-only">{copied ? "Copied!" : "Copy"}</span>
+    </Button>
   );
 };
 
@@ -113,66 +57,19 @@ interface PoolListProps {
   sdk: LiquidityBookServices;
   onRefresh: () => Promise<void>;
   loading: boolean;
+  loadingText: string;
 }
 
-const formatNumber = (num: number | undefined) => {
-  if (num === undefined) return "N/A";
-  return num.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-};
-
-const CopyIcon: React.FC<{ textToCopy: string }> = ({ textToCopy }) => {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    navigator.clipboard.writeText(textToCopy);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-  return (
-    <button
-      onClick={handleCopy}
-      style={{
-        background: "transparent",
-        border: "none",
-        cursor: "pointer",
-        padding: "5px",
-        color: "white",
-        marginLeft: "8px",
-      }}
-      title="Copy address"
-    >
-      {copied ? "✓" : "📋"}
-    </button>
-  );
-};
-
-export const PoolList: React.FC<PoolListProps> = ({
-  pools,
-  onPoolSelect,
-  sdk,
-  onRefresh,
-  loading,
-}) => {
+export const PoolList: React.FC<PoolListProps> = ({ pools, onPoolSelect, sdk, onRefresh, loading, loadingText }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const [searchError, setSearchError] = useState<string | null>(null);
   const [isValidating, setIsValidating] = useState(false);
-
-  const [filterOption, setFilterOption] = useState<
-    "all" | "with-liquidity" | "zero-liquidity"
-  >("with-liquidity");
+  const [filterOption, setFilterOption] = useState<"all" | "with-liquidity" | "zero-liquidity">("with-liquidity");
   const [sortOption, setSortOption] = useState<"desc" | "asc">("desc");
 
-  // --- FIX: This effect now *only* handles direct navigation for valid pasted addresses ---
   useEffect(() => {
-    const isPotentialAddress =
-      searchValue.length >= 32 &&
-      searchValue.length <= 44 &&
-      !searchValue.includes("/");
-
+    const isPotentialAddress = searchValue.length >= 32 && searchValue.length <= 44 && !searchValue.includes("/");
     if (!isPotentialAddress) {
       setSearchError(null);
       setIsValidating(false);
@@ -181,7 +78,6 @@ export const PoolList: React.FC<PoolListProps> = ({
 
     setIsValidating(true);
     setSearchError(null);
-
     const handler = setTimeout(async () => {
       try {
         const pubkey = new PublicKey(searchValue);
@@ -192,8 +88,7 @@ export const PoolList: React.FC<PoolListProps> = ({
       } finally {
         setIsValidating(false);
       }
-    }, 500);
-
+    }, 800);
     return () => clearTimeout(handler);
   }, [searchValue, sdk, onPoolSelect]);
 
@@ -202,301 +97,179 @@ export const PoolList: React.FC<PoolListProps> = ({
     await onRefresh();
   };
 
-  // --- FIX: List processing now includes filtering by symbol or address from the search bar ---
   const processedPools = useMemo(() => {
     let filteredPools = pools;
-
     if (filterOption === "with-liquidity") {
-      filteredPools = pools.filter((pool) => pool.liquidity > 0);
+      filteredPools = pools.filter((pool) => pool.liquidity > 1); // filter dust
     } else if (filterOption === "zero-liquidity") {
-      filteredPools = pools.filter((pool) => pool.liquidity === 0);
+      filteredPools = pools.filter((pool) => pool.liquidity <= 1);
     }
-
     if (searchValue) {
       const lowerSearch = searchValue.toLowerCase();
       filteredPools = filteredPools.filter(
-        (pool) =>
-          `${pool.baseSymbol}/${pool.quoteSymbol}`
-            .toLowerCase()
-            .includes(lowerSearch) ||
-          pool.address.toLowerCase().includes(lowerSearch)
+        (pool) => `${pool.baseSymbol}/${pool.quoteSymbol}`.toLowerCase().includes(lowerSearch) || pool.address.toLowerCase().includes(lowerSearch)
       );
     }
-
-    if (filterOption === "with-liquidity" || filterOption === "all") {
-      filteredPools = [...filteredPools].sort((a, b) => {
-        return sortOption === "desc"
-          ? b.liquidity - a.liquidity
-          : a.liquidity - b.liquidity;
-      });
-    }
-
-    return filteredPools;
+    return [...filteredPools].sort((a, b) => {
+      return sortOption === "desc" ? b.liquidity - a.liquidity : a.liquidity - b.liquidity;
+    });
   }, [pools, filterOption, sortOption, searchValue]);
 
+  const formatNumber = (num: number | undefined) => {
+    if (num === undefined) return "N/A";
+    return `$${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+  
+  const formatPrice = (price: number) => {
+    if (price < 0.000001 && price > 0) return `< $0.000001`;
+    return `$${price.toFixed(6)}`;
+  }
+
+  const renderLoadingState = () => (
+    <Card>
+      <CardContent className="p-6">
+        <div className="space-y-4">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="flex items-center space-x-4">
+              <Skeleton className="h-10 w-10 rounded-full" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-4 w-1/2" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+
   return (
-    <div>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "5px",
-          gap: "15px",
-        }}
-      >
-        <div style={{ display: "flex", flexDirection: "column", flexGrow: 1 }}>
-          <input
+    <div className="animate-slide-up space-y-4">
+      {/* --- Controls --- */}
+      <div className="flex flex-col gap-4 md:flex-row md:items-center">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+          <Input
             type="text"
             value={searchValue}
             onChange={(e) => setSearchValue(e.target.value)}
-            // --- FIX: Placeholder text updated for new functionality ---
             placeholder="Search by symbol (e.g. SOL/USDC) or paste address"
-            style={{
-              flexGrow: 1,
-              padding: "10px",
-              background: "#222",
-              border: "1px solid #444",
-              borderRadius: "4px",
-              color: "white",
-            }}
+            className="pl-10"
           />
+           {(isValidating || searchError) && (
+             <div className="absolute text-xs text-muted-foreground mt-1 ml-1">{isValidating ? "Validating address..." : searchError}</div>
+           )}
         </div>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          style={{
-            padding: "10px 20px",
-            cursor: "pointer",
-            whiteSpace: "nowrap",
-          }}
-          disabled={loading}
-        >
-          + Create Pool
-        </button>
+        <div className="flex items-center gap-2">
+          <Select value={filterOption} onValueChange={(value) => setFilterOption(value as any)}>
+            <SelectTrigger className="w-full md:w-[180px]">
+              <SelectValue placeholder="Filter pools" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="with-liquidity">With Liquidity</SelectItem>
+              <SelectItem value="all">All Pools</SelectItem>
+              <SelectItem value="zero-liquidity">Zero Liquidity</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={sortOption} onValueChange={(value) => setSortOption(value as any)}>
+             <SelectTrigger className="w-full md:w-[180px]">
+              <SelectValue placeholder="Sort by" />
+            </SelectTrigger>
+            <SelectContent>
+                <SelectItem value="desc">TVL: High to Low</SelectItem>
+                <SelectItem value="asc">TVL: Low to High</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button variant="outline" size="icon" onClick={onRefresh} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          </Button>
+          <Button onClick={() => setIsModalOpen(true)} disabled={loading} className="w-full md:w-auto">
+            <PlusCircle className="h-5 w-5 mr-2" /> Create Pool
+          </Button>
+        </div>
       </div>
-      <div
-        style={{
-          height: "20px",
-          marginBottom: "15px",
-          fontSize: "12px",
-          paddingLeft: "2px",
-        }}
-      >
-        {isValidating && (
-          <p style={{ color: "#aaa", margin: 0 }}>Validating address...</p>
-        )}
-        {searchError && (
-          <p style={{ color: "red", margin: 0 }}>{searchError}</p>
-        )}
-      </div>
-
+      
       {isModalOpen && (
-        <div style={modalOverlayStyle} onClick={() => setIsModalOpen(false)}>
-          <div style={modalContentStyle} onClick={(e) => e.stopPropagation()}>
-            <button
-              style={closeButtonStyle}
-              onClick={() => setIsModalOpen(false)}
-            >
-              &times;
-            </button>
-            <CreatePool sdk={sdk} onPoolCreated={handlePoolCreated} />
-          </div>
-        </div>
+           <CreatePool sdk={sdk} onPoolCreated={handlePoolCreated} onClose={() => setIsModalOpen(false)} />
       )}
 
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "15px",
-          flexWrap: "wrap",
-          gap: "15px",
-        }}
-      >
-        <div style={{ display: "flex", gap: "10px" }}>
-          <button
-            onClick={() => setFilterOption("all")}
-            style={filterOption === "all" ? activeTabStyle : inactiveTabStyle}
-          >
-            All
-          </button>
-          <button
-            onClick={() => setFilterOption("with-liquidity")}
-            style={
-              filterOption === "with-liquidity"
-                ? activeTabStyle
-                : inactiveTabStyle
-            }
-          >
-            With Liquidity
-          </button>
-          <button
-            onClick={() => setFilterOption("zero-liquidity")}
-            style={
-              filterOption === "zero-liquidity"
-                ? activeTabStyle
-                : inactiveTabStyle
-            }
-          >
-            Zero Liquidity
-          </button>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "15px" }}>
-          <select
-            value={sortOption}
-            onChange={(e) => setSortOption(e.target.value as "desc" | "asc")}
-            disabled={filterOption === "zero-liquidity"}
-            style={{
-              padding: "8px",
-              background: "#222",
-              border: "1px solid #444",
-              borderRadius: "4px",
-              color: "white",
-              opacity: filterOption === "zero-liquidity" ? 0.5 : 1,
-            }}
-          >
-            <option value="desc">Sort: High to Low</option>
-            <option value="asc">Sort: Low to High</option>
-          </select>
-          <button
-            onClick={onRefresh}
-            disabled={loading}
-            style={{ padding: "8px 12px", cursor: "pointer" }}
-          >
-            Refresh
-          </button>
-          <span style={{ marginLeft: "15px", fontSize: "14px", color: "#ccc" }}>
-            Total Pools: {processedPools.length}
-          </span>
-        </div>
-      </div>
+      {/* --- Pool List --- */}
+      {loading && pools.length === 0 ? renderLoadingState() : (
+        <>
+            <div className="text-sm text-muted-foreground">
+                Showing {processedPools.length} of {pools.length} pools.
+            </div>
+            <Card className="hidden md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Pair</TableHead>
+                    <TableHead className="text-right">Total Value Locked</TableHead>
+                    <TableHead className="text-right">Current Price</TableHead>
+                    <TableHead>Pool Address</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {processedPools.length > 0 ? processedPools.map((pool) => (
+                    <TableRow key={pool.address} onClick={() => onPoolSelect(pool.address)} className="cursor-pointer">
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <PairLogos {...pool} />
+                          <span className="font-medium">{pool.baseSymbol}/{pool.quoteSymbol}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right font-mono">{formatNumber(pool.liquidity)}</TableCell>
+                      <TableCell className="text-right font-mono">{formatPrice(pool.price)}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs">{`${pool.address.slice(0, 6)}...${pool.address.slice(-6)}`}</span>
+                          <CopyButton textToCopy={pool.address} />
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )) : (
+                    <TableRow>
+                      <TableCell colSpan={4} className="h-24 text-center">No pools match your criteria.</TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </Card>
 
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr>
-            <th
-              style={{
-                border: "1px solid #444",
-                padding: "8px",
-                textAlign: "left",
-              }}
-            >
-              Pair
-            </th>
-            <th
-              style={{
-                border: "1px solid #444",
-                padding: "8px",
-                textAlign: "left",
-              }}
-            >
-              Total Liquidity
-            </th>
-            <th
-              style={{
-                border: "1px solid #444",
-                padding: "8px",
-                textAlign: "left",
-              }}
-            >
-              Current Price
-            </th>
-            <th
-              style={{
-                border: "1px solid #444",
-                padding: "8px",
-                textAlign: "left",
-              }}
-            >
-              Pool Address
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {processedPools.length > 0 ? (
-            processedPools.map((pool) => (
-              <tr
-                key={pool.address}
-                onClick={() => onPoolSelect(pool.address)}
-                style={{ cursor: "pointer" }}
-                onMouseOver={(e) =>
-                  (e.currentTarget.style.backgroundColor = "#333")
-                }
-                onMouseOut={(e) =>
-                  (e.currentTarget.style.backgroundColor = "transparent")
-                }
-              >
-                <td style={{ border: "1px solid #444", padding: "8px" }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "10px",
-                    }}
-                  >
-                    <PairLogos
-                      baseLogo={pool.baseLogoURI}
-                      quoteLogo={pool.quoteLogoURI}
-                      baseSymbol={pool.baseSymbol}
-                      quoteSymbol={pool.quoteSymbol}
-                    />
-                    <span>
-                      {pool.baseSymbol}/{pool.quoteSymbol}
-                    </span>
-                  </div>
-                </td>
-                <td
-                  style={{
-                    border: "1px solid #444",
-                    padding: "8px",
-                    fontFamily: "monospace",
-                  }}
-                >
-                  {formatNumber(pool.liquidity)}
-                </td>
-                <td
-                  style={{
-                    border: "1px solid #444",
-                    padding: "8px",
-                    fontFamily: "monospace",
-                  }}
-                >
-                  {pool.price.toFixed(6)}
-                </td>
-
-                <td style={{ border: "1px solid #444", padding: "8px" }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                    }}
-                  >
-                    <span style={{ fontFamily: "monospace", fontSize: "12px" }}>
-                      {pool.address}
-                    </span>
-                    <CopyIcon textToCopy={pool.address} />
-                  </div>
-                </td>
-              </tr>
-            ))
-          ) : (
-            <tr>
-              <td
-                colSpan={4}
-                style={{
-                  border: "1px solid #444",
-                  padding: "8px",
-                  textAlign: "center",
-                }}
-              >
-                No pools match your criteria.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+            <div className="grid gap-4 md:hidden">
+                {processedPools.length > 0 ? processedPools.map((pool) => (
+                     <Card key={pool.address} onClick={() => onPoolSelect(pool.address)} className="cursor-pointer">
+                        <CardContent className="p-4">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <PairLogos {...pool} />
+                                    <span className="font-medium">{pool.baseSymbol}/{pool.quoteSymbol}</span>
+                                </div>
+                                 <div className="flex items-center gap-2">
+                                     <span className="font-mono text-xs text-muted-foreground">{`${pool.address.slice(0, 4)}...${pool.address.slice(-4)}`}</span>
+                                     <CopyButton textToCopy={pool.address} />
+                                </div>
+                            </div>
+                            <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
+                                <div>
+                                    <div className="text-muted-foreground">TVL</div>
+                                    <div className="font-mono">{formatNumber(pool.liquidity)}</div>
+                                </div>
+                                 <div>
+                                    <div className="text-muted-foreground">Price</div>
+                                    <div className="font-mono">{formatPrice(pool.price)}</div>
+                                </div>
+                            </div>
+                        </CardContent>
+                     </Card>
+                )) : (
+                    <Card className="h-24 flex items-center justify-center">
+                        <p>No pools match your criteria.</p>
+                    </Card>
+                )}
+            </div>
+        </>
+      )}
     </div>
   );
 };

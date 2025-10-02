@@ -1,6 +1,6 @@
+// src/app/positions/page.tsx
 "use client";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import dynamic from "next/dynamic";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { AnchorProvider, setProvider } from "@coral-xyz/anchor";
@@ -13,8 +13,11 @@ import { RemoveLiquidityModal } from "@/components/modals/RemoveLiquidityModal";
 import { RebalanceModal } from "@/components/modals/RebalanceModal";
 import { useRouter } from "next/navigation";
 import { BurnPositionModal } from "@/components/modals/BurnPositionModal";
-
-const WalletProvider = dynamic(() => import("@/components/walletContextProvider").then((mod) => mod.WalletContextProvider), { ssr: false });
+import { LayoutDashboard, Waves, FolderKanban, Layers, RefreshCw, PlusCircle, Search } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export interface EnrichedPositionData {
   key: string;
@@ -34,12 +37,12 @@ const PositionsPageContent = () => {
 
     const [allEnrichedPositions, setAllEnrichedPositions] = useState<EnrichedPositionData[]>([]);
     const [statusMessage, setStatusMessage] = useState("Please connect your wallet...");
-    const [eta, setEta] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
-    
+
+    const [eta, setEta] = useState<string | null>(null);
+
     const [positionFilter, setPositionFilter] = useState<PositionFilter>("all");
     const [searchTerm, setSearchTerm] = useState("");
-    const [sortOption, setSortOption] = useState<'desc' | 'asc'>('desc');
     
     const [isRemoveModalOpen, setIsRemoveModalOpen] = useState(false);
     const [isRebalanceModalOpen, setIsRebalanceModalOpen] = useState(false);
@@ -53,13 +56,12 @@ const PositionsPageContent = () => {
         return new LiquidityBookServices({ mode: MODE.DEVNET });
     }, [connected, connection, wallet]);
     
-    
     const handleSelectPosition = (positionData: EnrichedPositionData) => {
         sessionStorage.setItem(`position_details_${positionData.key}`, JSON.stringify(positionData));
         router.push(`/positions/${positionData.key}`);
     };
 
-    const fetchAllUserPositions = useCallback(
+   const fetchAllUserPositions = useCallback(
     async (forceRefresh: boolean = false) => {
       if (!sdk || !publicKey) return;
       const CACHE_KEY = `cachedEnrichedPositions_${publicKey.toBase58()}`;
@@ -201,197 +203,140 @@ const PositionsPageContent = () => {
     [sdk, publicKey]
   );
 
-    const handleRefreshAndCloseModals = () => {
-        setIsRemoveModalOpen(false);
-        setIsRebalanceModalOpen(false);
-        setIsBurnModalOpen(false);
-        fetchAllUserPositions(true);
-    };
-
-    const handleOpenRemoveModal = (position: EnrichedPositionData) => {
-        setSelectedPosition(position);
-        setIsRemoveModalOpen(true);
-    };
-
-    const handleOpenRebalanceModal = (position: EnrichedPositionData) => {
-        setSelectedPosition(position);
-        setIsRebalanceModalOpen(true);
-    };
-
-    const handleOpenBurnModal = (position: EnrichedPositionData) => {
-        setSelectedPosition(position);
-        setIsBurnModalOpen(true);
-    };
-    
-    const processedPositions = useMemo(() => {
-        const lowerSearch = searchTerm.toLowerCase();
-        let filtered = allEnrichedPositions.filter(p => {
-            const pairSymbol = p.baseToken?.symbol && p.quoteToken?.symbol ? `${p.baseToken.symbol}/${p.quoteToken.symbol}`.toLowerCase() : '';
-            const poolAddr = p.poolAddress?.toLowerCase() || '';
-            return pairSymbol.includes(lowerSearch) || poolAddr.includes(lowerSearch);
-        });
-
-        filtered = filtered.filter(p => {
-          const totalLiquidity = p.position.liquidityShares.reduce((acc, current) => acc + BigInt(current), BigInt(0));
-          if (positionFilter === 'empty') return totalLiquidity === BigInt(0);
-          const isActive = p.poolDetails.activeId >= p.position.lowerBinId && p.poolDetails.activeId <= p.position.upperBinId;
-          if (positionFilter === 'active') return totalLiquidity > BigInt(0) && isActive;
-          if (positionFilter === 'inactive') return totalLiquidity > BigInt(0) && !isActive;
-          return true;
-        });
-
-        filtered.sort((a, b) => {
-            const liqA = a.position.liquidityShares.reduce((acc, val) => acc + BigInt(val), BigInt(0));
-            const liqB = b.position.liquidityShares.reduce((acc, val) => acc + BigInt(val), BigInt(0));
-            if (sortOption === 'desc') {
-                return liqB > liqA ? 1 : -1;
-            } else {
-                return liqA > liqB ? 1 : -1;
-            }
-        });
-        
-        return filtered;
-    }, [allEnrichedPositions, positionFilter, searchTerm, sortOption]);
-
     useEffect(() => {
         if (connected && sdk) {
             fetchAllUserPositions();
         }
     }, [connected, sdk, fetchAllUserPositions]);
 
-    const renderContent = () => {
-        if (isLoading) {
-            return (
-                <div>
-                    <p>{statusMessage}</p>
-                    {eta && <p style={{ color: "#888" }}>{eta}</p>}
-                </div>
-            );
-        }
-        if (allEnrichedPositions.length === 0) {
-            return (
-                <div style={{ textAlign: 'center', marginTop: '50px' }}>
-                    <p>{statusMessage || "No liquidity positions found."}</p>
-                </div>
-            );
-        }
-        return (
-            <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
-                    <div style={{ display: 'flex', gap: '5px' }}>
-                        {(['all', 'active', 'inactive', 'empty'] as PositionFilter[]).map(f => (
-                            <button key={f} onClick={() => setPositionFilter(f)} style={getFilterButtonStyle(positionFilter === f)}>
-                                {f.charAt(0).toUpperCase() + f.slice(1)}
-                            </button>
-                        ))}
-                    </div>
-                    <input
-                        type="text"
-                        placeholder="Search by pair or pool address"
-                        value={searchTerm}
-                        onChange={e => setSearchTerm(e.target.value)}
-                        style={{ padding: '8px', minWidth: '250px' }}
-                    />
-                    <select
-                        value={sortOption}
-                        onChange={(e) => setSortOption(e.target.value as "desc" | "asc")}
-                        style={{ padding: "8px", background: "#222", border: "1px solid #444", borderRadius: "4px", color: "white" }}
-                    >
-                        <option value="desc">Sort by Liquidity: High to Low</option>
-                        <option value="asc">Sort by Liquidity: Low to High</option>
-                    </select>
-                </div>
-                
-                {processedPositions.length > 0 ? (
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(350px, 1fr))", gap: "20px" }}>
-                        {processedPositions.map((data) => (
-                            <PositionCard
-                                key={data.key}
-                                enrichedData={data}
-                                onRemove={() => handleOpenRemoveModal(data)}
-                                onRebalance={() => handleOpenRebalanceModal(data)}
-                                onSelect={() => handleSelectPosition(data)}
-                                onBurn={() => handleOpenBurnModal(data)}
-                            />
-                        ))}
-                    </div>
-                ) : (
-                    <p>No positions match your current filters.</p>
-                )}
-            </div>
-        );
+    const handleRefreshAndCloseModals = () => {
+        setIsRemoveModalOpen(false);
+        setIsRebalanceModalOpen(false);
+        setIsBurnModalOpen(false);
+        fetchAllUserPositions(true);
+    };
+    
+    const openModal = (type: 'remove' | 'rebalance' | 'burn', position: EnrichedPositionData) => {
+        setSelectedPosition(position);
+        if (type === 'remove') setIsRemoveModalOpen(true);
+        if (type === 'rebalance') setIsRebalanceModalOpen(true);
+        if (type === 'burn') setIsBurnModalOpen(true);
     };
 
-    return (
-        <div style={{ padding: "20px", fontFamily: "sans-serif" }}>
-            <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
-                    <a href="/" style={{ textDecoration: "none", color: "#aaa" }}>&larr; Back to Pools</a>
-                    <h1>My DLMM Positions</h1>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                     <a 
-                        href="/" 
-                        style={{ 
-                            padding: '8px 12px', background: '#3a76f7', color: 'white', textDecoration: 'none',
-                            borderRadius: '4px', border: '1px solid #3a76f7',
-                            pointerEvents: isLoading ? 'none' : 'auto', opacity: isLoading ? 0.6 : 1
-                        }}
-                    >
-                        + Add Liquidity
-                    </a>
-                    <button onClick={() => fetchAllUserPositions(true)} disabled={isLoading}>Refresh</button>
-                    <WalletMultiButton />
-                </div>
-            </header>
-            <hr style={{ margin: "20px 0" }} />
-            <main>
-                {!connected ? (
-                    <p>Please connect your wallet to continue.</p>
-                ) : sdk && publicKey ? (
-                    <>
-                        <RemoveLiquidityModal 
-                            isOpen={isRemoveModalOpen} 
-                            onClose={() => setIsRemoveModalOpen(false)} 
-                            sdk={sdk} 
-                            positionToRemove={selectedPosition} 
-                            onSuccess={handleRefreshAndCloseModals} 
-                        />
-                        <RebalanceModal 
-                            isOpen={isRebalanceModalOpen} 
-                            onClose={() => setIsRebalanceModalOpen(false)} 
-                            sdk={sdk} 
-                            positionToRebalance={selectedPosition} 
-                            onSuccess={handleRefreshAndCloseModals} 
-                        />
-                        <BurnPositionModal
-                            isOpen={isBurnModalOpen}
-                            onClose={() => setIsBurnModalOpen(false)}
-                            sdk={sdk}
-                            positionToBurn={selectedPosition}
-                            onSuccess={handleRefreshAndCloseModals}
-                        />
-                        {renderContent()}
-                    </>
-                ) : ( 
-                    <p>Initializing...</p> 
-                )}
-            </main>
+    const processedPositions = useMemo(() => {
+        const lowerSearch = searchTerm.toLowerCase();
+        return allEnrichedPositions
+            .filter(p => {
+                const pairSymbol = `${p.baseToken.symbol}/${p.quoteToken.symbol}`.toLowerCase();
+                return pairSymbol.includes(lowerSearch) || p.poolAddress.toLowerCase().includes(lowerSearch);
+            })
+            .filter(p => {
+                const totalLiquidity = p.position.liquidityShares.reduce((acc, current) => acc + BigInt(current), BigInt(0));
+                if (positionFilter === 'empty') return totalLiquidity === BigInt(0);
+                const isActive = p.poolDetails.activeId >= p.position.lowerBinId && p.poolDetails.activeId <= p.position.upperBinId;
+                if (positionFilter === 'active') return totalLiquidity > BigInt(0) && isActive;
+                if (positionFilter === 'inactive') return totalLiquidity > BigInt(0) && !isActive;
+                return true;
+            });
+    }, [allEnrichedPositions, positionFilter, searchTerm]);
+
+    const renderLoadingState = () => (
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-56 w-full" />)}
         </div>
+    );
+
+    return (
+     <div className="flex min-h-screen w-full flex-col">
+        <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background/80 px-4 backdrop-blur-sm md:px-6">
+            <nav className="hidden flex-col gap-6 text-lg font-medium md:flex md:flex-row md:items-center md:gap-5 md:text-sm lg:gap-6">
+                <a href="/dashboard" className="flex items-center gap-2 font-bold text-foreground">
+                    <Layers className="h-6 w-6" />
+                    <span>Saros DLMM</span>
+                </a>
+                <a href="/dashboard" className="flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground">
+                    <LayoutDashboard className="h-4 w-4" />
+                    Dashboard
+                </a>
+                <a href="/pools" className="flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground">
+                    <Waves className="h-4 w-4" />
+                    Pools
+                </a>
+                <a href="/positions" className="flex items-center gap-2 text-foreground transition-colors hover:text-foreground/80">
+                    <FolderKanban className="h-4 w-4" />
+                    My Positions
+                </a>
+            </nav>
+            <div className="ml-auto flex items-center gap-4">
+                <WalletMultiButton />
+            </div>
+        </header>
+
+        <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
+            <div className="animate-slide-up space-y-2">
+                <h2 className="text-3xl font-bold tracking-tight">My Positions</h2>
+                <p className="text-muted-foreground">An overview of all your liquidity positions across all pools.</p>
+            </div>
+
+             <div className="flex flex-col gap-4 md:flex-row">
+                <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                    <Input placeholder="Search by symbol or pool address..." className="pl-10" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                </div>
+                <div className="flex items-center gap-2">
+                    <Select value={positionFilter} onValueChange={v => setPositionFilter(v as PositionFilter)}>
+                        <SelectTrigger className="w-full md:w-[150px]">
+                            <SelectValue placeholder="Filter..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All Positions</SelectItem>
+                            <SelectItem value="active">Active</SelectItem>
+                            <SelectItem value="inactive">Out of Range</SelectItem>
+                            <SelectItem value="empty">Empty</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    <Button variant="outline" size="icon" onClick={() => fetchAllUserPositions(true)} disabled={isLoading}>
+                        <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+                    </Button>
+                    <Button onClick={() => router.push('/pools')} className="w-full md:w-auto">
+                        <PlusCircle className="h-4 w-4 mr-2" /> Add Liquidity
+                    </Button>
+                </div>
+            </div>
+
+            {isLoading ? renderLoadingState() :
+             !connected || !sdk ? <p className="text-center text-muted-foreground py-10">Please connect your wallet.</p> :
+             allEnrichedPositions.length === 0 ? <p className="text-center text-muted-foreground py-10">{statusMessage || "No positions found."}</p> :
+             processedPositions.length > 0 ? (
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                    {processedPositions.map((data) => (
+                        <PositionCard
+                            key={data.key}
+                            enrichedData={data}
+                            onRemove={() => openModal('remove', data)}
+                            onRebalance={() => openModal('rebalance', data)}
+                            onSelect={() => handleSelectPosition(data)}
+                            onBurn={() => openModal('burn', data)}
+                        />
+                    ))}
+                </div>
+            ) : <p className="text-center text-muted-foreground py-10">No positions match your filters.</p>
+            }
+
+            {sdk && (
+                <>
+                    <RemoveLiquidityModal isOpen={isRemoveModalOpen} onClose={() => setIsRemoveModalOpen(false)} sdk={sdk} positionToRemove={selectedPosition} onSuccess={handleRefreshAndCloseModals} />
+                    <RebalanceModal isOpen={isRebalanceModalOpen} onClose={() => setIsRebalanceModalOpen(false)} sdk={sdk} positionToRebalance={selectedPosition} onSuccess={handleRefreshAndCloseModals} />
+                    <BurnPositionModal isOpen={isBurnModalOpen} onClose={() => setIsBurnModalOpen(false)} sdk={sdk} positionToBurn={selectedPosition} onSuccess={handleRefreshAndCloseModals} />
+                </>
+            )}
+        </main>
+    </div>
     );
 };
 
-const getFilterButtonStyle = (isActive: boolean): React.CSSProperties => ({
-    padding: '5px 10px', border: isActive ? '1px solid #3a76f7' : '1px solid #444',
-    background: isActive ? '#3a76f7' : 'none', color: 'white', cursor: 'pointer', borderRadius: '5px'
-});
-
 function AllPositionsPage() {
-  return (
-    <WalletProvider>
-      <PositionsPageContent />
-    </WalletProvider>
-  );
+  return <PositionsPageContent />;
 }
 
 export default AllPositionsPage;

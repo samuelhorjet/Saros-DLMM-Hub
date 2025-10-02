@@ -2,13 +2,14 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { LiquidityBookServices } from '@saros-finance/dlmm-sdk';
-import { useConnection, useWallet } from '@solana/wallet-adapter-react';
+import { useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey, Transaction } from '@solana/web3.js';
 import { EnrichedPositionData } from '@/app/positions/page';
-
-const modalOverlayStyle: React.CSSProperties = { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.75)", display: "flex", justifyContent: "center", alignItems: "center", zIndex: 1000 };
-const modalContentStyle: React.CSSProperties = { background: "#1a1a1a", padding: "25px", borderRadius: "8px", width: "90%", maxWidth: "600px", maxHeight: "90vh", overflowY: "auto", position: "relative", border: "1px solid #444" };
-const closeButtonStyle: React.CSSProperties = { position: "absolute", top: "10px", right: "15px", background: "transparent", border: "none", color: "white", fontSize: "24px", cursor: "pointer" };
+import { motion } from 'framer-motion';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Loader2, X, AlertTriangle, Info } from 'lucide-react';
 
 export const RemoveLiquidityModal: React.FC<{
     isOpen: boolean;
@@ -34,10 +35,9 @@ export const RemoveLiquidityModal: React.FC<{
         setIsProcessing(true);
         setStatus('Building transaction...');
         try {
-            // --- FIX: Correctly destructure all needed properties ---
             const { position, baseToken, quoteToken, poolAddress, poolDetails } = positionToRemove;
             
-            const { txs, txCreateAccount, txCloseAccount } = await sdk.removeMultipleLiquidity({
+            const { txs } = await sdk.removeMultipleLiquidity({
                 payer: publicKey,
                 pair: new PublicKey(poolAddress),
                 tokenMintX: new PublicKey(baseToken.mintAddress),
@@ -52,23 +52,16 @@ export const RemoveLiquidityModal: React.FC<{
                 }],
             });
 
-            const allTxs: Transaction[] = [];
-            if (txCreateAccount) allTxs.push(txCreateAccount);
-            allTxs.push(...txs);
-            if (txCloseAccount) allTxs.push(txCloseAccount);
-
-            if (allTxs.length === 0) {
-                throw new Error("No transactions were generated to remove liquidity.");
-            }
+            if (txs.length === 0) throw new Error("No transactions were generated to remove liquidity.");
 
             const { blockhash, lastValidBlockHeight } = await sdk.connection.getLatestBlockhash();
-            allTxs.forEach(tx => {
+            txs.forEach(tx => {
                 tx.recentBlockhash = blockhash;
                 tx.feePayer = publicKey;
             });
             
-            setStatus('Please approve transaction(s)...');
-            const signature = await sendTransaction(allTxs[0], sdk.connection);
+            setStatus('Please approve transaction...');
+            const signature = await sendTransaction(txs[0], sdk.connection);
             
             setStatus('Waiting for confirmation...');
             await sdk.connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, 'confirmed');
@@ -90,18 +83,35 @@ export const RemoveLiquidityModal: React.FC<{
     if (!isOpen || !positionToRemove) return null;
 
     return (
-        <div style={modalOverlayStyle} onClick={onClose}>
-            <div style={modalContentStyle} onClick={e => e.stopPropagation()}>
-                <button style={closeButtonStyle} onClick={onClose}>&times;</button>
-                <h4>Remove 100% of Liquidity</h4>
-                <p>From: {positionToRemove.baseToken.symbol}/{positionToRemove.quoteToken.symbol} Position</p>
-                <p style={{fontSize: '12px', color: '#aaa', wordBreak: 'break-all'}}>Mint: {positionToRemove.key}</p>
-
-                <button onClick={handleRemove} disabled={isProcessing} style={{ width: '100%', padding: '10px', marginTop: '20px' }}>
-                    {isProcessing ? 'Processing...' : `Confirm Removal`}
-                </button>
-                {status && <p style={{ marginTop: '15px' }}>{status}</p>}
-            </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80" onClick={onClose}>
+            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} onClick={(e: { stopPropagation: () => any; }) => e.stopPropagation()}>
+                <Card className="w-full max-w-md">
+                    <CardHeader>
+                        <CardTitle>Remove All Liquidity</CardTitle>
+                        <CardDescription>
+                           You are about to withdraw 100% of the liquidity from this {positionToRemove.baseToken.symbol}/{positionToRemove.quoteToken.symbol} position.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                         <p className="text-sm font-mono break-all bg-muted p-2 rounded-md">Mint: {positionToRemove.key}</p>
+                         {status && (
+                            <Alert variant={status.startsWith("Error:") ? "destructive" : "default"} className="mt-4">
+                               {status.startsWith("Error:") ? <AlertTriangle className="h-4 w-4" /> : <Info className="h-4 w-4" />}
+                                <AlertTitle>{status.startsWith("Error:") ? "Error" : "Status"}</AlertTitle>
+                                <AlertDescription>{status.replace("Error:", "")}</AlertDescription>
+                            </Alert>
+                        )}
+                    </CardContent>
+                    <CardFooter className="flex justify-end gap-2">
+                         <Button variant="outline" onClick={onClose} disabled={isProcessing}>Cancel</Button>
+                         <Button onClick={handleRemove} disabled={isProcessing} variant="destructive">
+                            {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            {isProcessing ? 'Processing...' : `Confirm Removal`}
+                        </Button>
+                    </CardFooter>
+                    <Button variant="ghost" size="icon" onClick={onClose} className="absolute top-4 right-4"><X className="h-4 w-4" /></Button>
+                </Card>
+            </motion.div>
         </div>
     );
 };

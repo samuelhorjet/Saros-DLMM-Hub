@@ -1,9 +1,8 @@
-// src/components/WalletContextProvider.tsx
+// src/components/walletContextProvider.tsx
 "use client";
 import React, { FC, useMemo, ReactNode } from 'react';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
 import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
-// THE FIX: We no longer need to import every wallet manually
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
 import { clusterApiUrl } from '@solana/web3.js';
 
@@ -17,8 +16,7 @@ export const WalletContextProvider: FC<WalletContextProviderProps> = ({ children
     const network = WalletAdapterNetwork.Devnet;
     const endpoint = useMemo(() => process.env.NEXT_PUBLIC_RPC_URL || clusterApiUrl(network), [network]);
 
-    // THE FIX: Provide an empty array. The adapter will automatically discover
-    // standard wallets like Phantom and Solflare that are installed.
+    // The adapter will automatically discover installed standard wallets.
     const wallets = useMemo(() => [], [network]);
 
     return (

@@ -5,21 +5,31 @@ import React, { useState, useEffect } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { LiquidityBookServices } from '@saros-finance/dlmm-sdk';
-import { EnrichedPositionData } from '@/app/positions/page'; // Assuming this is the correct path
+import { EnrichedPositionData } from '@/app/positions/page';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Wallet, Layers, CheckCircle, TrendingUp, Plus, LayoutGrid } from "lucide-react";
+import { Wallet, Layers, CheckCircle, TrendingUp, Plus, LayoutGrid, AlertCircle } from "lucide-react";
 
 interface DashboardProps {
     sdk: LiquidityBookServices;
     onNavigate: (section: 'pools' | 'positions') => void;
 }
 
-// A simple card component for displaying stats
-const StatCard: React.FC<{ title: string; value: string | number; icon: React.ReactNode }> = ({ title, value, icon }) => (
-    <Card className="card-fintech">
+const StatCardSkeleton: React.FC = () => (
+    <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">{title}</CardTitle>
+            <div className="h-4 w-2/3 animate-pulse rounded-md bg-muted" />
+        </CardHeader>
+        <CardContent>
+            <div className="h-7 w-1/2 animate-pulse rounded-md bg-muted" />
+        </CardContent>
+    </Card>
+);
+
+const StatCard: React.FC<{ title: string; value: string | number; icon: React.ReactNode }> = ({ title, value, icon }) => (
+    <Card className="hover:border-primary/50">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
             {icon}
         </CardHeader>
         <CardContent>
@@ -37,21 +47,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ sdk, onNavigate }) => {
     const [activePositions, setActivePositions] = useState<number | null>(null);
     const [totalLiquidityValue, setTotalLiquidityValue] = useState<number | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         if (!publicKey || !sdk) return;
 
         const fetchDashboardData = async () => {
             setIsLoading(true);
+            setError(null);
             try {
-                // 1. Fetch SOL Balance
+                // Fetch SOL Balance
                 const lamports = await connection.getBalance(publicKey);
                 setSolBalance(lamports / LAMPORTS_PER_SOL);
 
-                // 2. Fetch Position Data from Cache
-                // NOTE: This relies on the user having visited the "My Positions" page first
-                // to populate the cache. This is a performance optimization to avoid a slow,
-                // full-chain scan on the main dashboard.
+                // Fetch Position Data from Cache
                 const cachedData = sessionStorage.getItem(`cachedEnrichedPositions_${publicKey.toBase58()}`);
                 if (cachedData) {
                     const positions: EnrichedPositionData[] = JSON.parse(cachedData);
@@ -62,18 +71,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ sdk, onNavigate }) => {
                         return totalLiquidity > BigInt(0) && p.poolDetails.activeId >= p.position.lowerBinId && p.poolDetails.activeId <= p.position.upperBinId;
                     }).length;
                     setActivePositions(active);
-
-                    // 3. Calculate Total Liquidity Value (Placeholder)
-                    // DEV NOTE: A real implementation requires a price oracle to get the USD value
-                    // of each token in the positions. For now, we'll use a placeholder.
+                    
+                    // DEV NOTE: A real implementation requires a price oracle.
+                    // This placeholder remains but is more clearly defined.
                     setTotalLiquidityValue(positions.length * 123.45); // Placeholder value
                 } else {
+                    // If no cache, we should fetch or show 0. Showing 0 is faster for the dashboard.
                     setTotalPositions(0);
                     setActivePositions(0);
                     setTotalLiquidityValue(0);
                 }
-            } catch (error) {
-                console.error("Failed to fetch dashboard data:", error);
+            } catch (err: any) {
+                console.error("Failed to fetch dashboard data:", err);
+                setError("Could not load your portfolio data. Please try refreshing.");
             } finally {
                 setIsLoading(false);
             }
@@ -82,38 +92,59 @@ export const Dashboard: React.FC<DashboardProps> = ({ sdk, onNavigate }) => {
         fetchDashboardData();
     }, [publicKey, sdk, connection]);
 
-    const loadingOr = (value: number | null, unit: string = '') => {
-        return isLoading ? '...' : `${value ?? 0}${unit}`;
+    const formatValue = (value: number | null, decimals: number = 2, unit: string = '') => {
+        if (value === null) return '...';
+        return `${value.toFixed(decimals)}${unit}`;
     };
     
-    return (
-        <div className="space-y-6 animate-slide-up">
-            <h2 className="text-3xl font-bold font-serif">Portfolio Overview</h2>
+    if (error) {
+        return (
+            <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-destructive/50 bg-destructive/10 p-12 text-center">
+                <AlertCircle className="h-10 w-10 text-destructive" />
+                <h3 className="mt-4 text-xl font-semibold text-destructive">{error}</h3>
+                <p className="mt-2 text-sm text-muted-foreground">There was an issue connecting to the network.</p>
+            </div>
+        )
+    }
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <StatCard title="SOL Balance" value={loadingOr(solBalance, ' SOL')} icon={<Wallet className="h-4 w-4 text-primary" />} />
-                <StatCard title="Total Positions" value={loadingOr(totalPositions)} icon={<Layers className="h-4 w-4 text-primary" />} />
-                <StatCard title="Active Positions" value={loadingOr(activePositions)} icon={<CheckCircle className="h-4 w-4 text-primary" />} />
-                <StatCard title="Total Liquidity Value" value={`$${loadingOr(totalLiquidityValue)}`} icon={<TrendingUp className="h-4 w-4 text-primary" />} />
+    return (
+        <div className="animate-slide-up space-y-6">
+            <div>
+                <h2 className="text-3xl font-bold tracking-tight">Portfolio Overview</h2>
+                <p className="text-muted-foreground">Here's a snapshot of your liquidity positions and assets.</p>
             </div>
 
-            <Card className="card-fintech">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {isLoading ? (
+                    <>
+                        <StatCardSkeleton />
+                        <StatCardSkeleton />
+                        <StatCardSkeleton />
+                        <StatCardSkeleton />
+                    </>
+                ) : (
+                    <>
+                        <StatCard title="SOL Balance" value={formatValue(solBalance, 4, ' SOL')} icon={<Wallet className="h-4 w-4 text-muted-foreground" />} />
+                        <StatCard title="Total Positions" value={totalPositions ?? 0} icon={<Layers className="h-4 w-4 text-muted-foreground" />} />
+                        <StatCard title="Active Positions" value={activePositions ?? 0} icon={<CheckCircle className="h-4 w-4 text-muted-foreground" />} />
+                        <StatCard title="Estimated TVL" value={`$${formatValue(totalLiquidityValue, 2)}`} icon={<TrendingUp className="h-4 w-4 text-muted-foreground" />} />
+                    </>
+                )}
+            </div>
+
+            <Card>
                 <CardHeader>
-                    <CardTitle className="font-serif">Quick Actions</CardTitle>
+                    <CardTitle>Quick Actions</CardTitle>
                 </CardHeader>
-                <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <Button variant="outline" className="justify-start gap-3" onClick={() => onNavigate('pools')}>
-                        <LayoutGrid className="h-4 w-4" /> View & Manage Pools
+                <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <Button variant="outline" size="lg" onClick={() => onNavigate('pools')}>
+                        <LayoutGrid /> View & Manage Pools
                     </Button>
-                     <Button variant="outline" className="justify-start gap-3" onClick={() => {
-                        // We can reuse the "Create Pool" modal logic from PoolList if we abstract it
-                        // For now, this just navigates to the pool list where the button exists.
-                         onNavigate('pools');
-                    }}>
-                        <Plus className="h-4 w-4" /> Create a New Pool
+                     <Button variant="outline" size="lg" onClick={() => onNavigate('pools')}>
+                        <Plus /> Create a New Pool
                     </Button>
-                    <Button variant="outline" className="justify-start gap-3" onClick={() => onNavigate('positions')}>
-                        <Layers className="h-4 w-4" /> View My Positions
+                    <Button variant="outline" size="lg" onClick={() => onNavigate('positions')}>
+                        <Layers /> View My Positions
                     </Button>
                 </CardContent>
             </Card>
