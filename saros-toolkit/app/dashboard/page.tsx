@@ -8,6 +8,7 @@ import { AnchorProvider, setProvider } from "@coral-xyz/anchor";
 import { Dashboard } from "@/components/Dashboard";
 import { useRouter } from "next/navigation";
 import { LayoutDashboard, Waves, FolderKanban, Layers } from "lucide-react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const DashboardContent = () => {
   const { connection } = useConnection();
@@ -77,6 +78,7 @@ const DashboardContent = () => {
           </a>
         </nav>
         <div className="ml-auto flex items-center gap-4">
+          <ThemeToggle />
           <WalletMultiButton />
         </div>
       </header>

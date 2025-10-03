@@ -93,9 +93,13 @@ const PositionsPageContent = () => {
   const fetchAllUserPositions = useCallback(
     async (forceRefresh: boolean = false) => {
       if (!sdk || !publicKey) return;
+
       const CACHE_KEY = `cachedEnrichedPositions_${publicKey.toBase58()}`;
       setIsLoading(true);
-      setEta(null);
+      setStatusMessage("Preparing to fetch positions...");
+      setEta(null); // Reset ETA at the start
+
+      // --- 1. Caching Layer (Unchanged) ---
       if (!forceRefresh) {
         const cachedData = sessionStorage.getItem(CACHE_KEY);
         if (cachedData) {
@@ -103,14 +107,15 @@ const PositionsPageContent = () => {
             const parsedData = JSON.parse(cachedData);
             if (
               Array.isArray(parsedData) &&
-              parsedData.every((p) => p.poolAddress && p.baseToken)
+              parsedData.length > 0 &&
+              parsedData[0].poolAddress &&
+              parsedData[0].baseToken
             ) {
               setStatusMessage("Loaded positions from cache.");
               setAllEnrichedPositions(parsedData);
               setIsLoading(false);
               return;
             }
-            console.warn("Cached data has incorrect structure, refetching...");
             sessionStorage.removeItem(CACHE_KEY);
           } catch (e) {
             console.error("Failed to parse cached positions, refetching...", e);
@@ -120,34 +125,39 @@ const PositionsPageContent = () => {
       } else {
         sessionStorage.removeItem(CACHE_KEY);
       }
+
       setAllEnrichedPositions([]);
-      let finalFailedPools: string[] = [];
+      const finalFailedPools: string[] = [];
+
       try {
-        const startTime = Date.now();
-        let allPools: any[] = [];
+        const startTime = Date.now(); // Start timer for ETA calculation
+
+        // --- 2. Load Pool List (Unchanged) ---
         const cachedPools = sessionStorage.getItem("cachedPools");
-        if (cachedPools) {
-          allPools = JSON.parse(cachedPools);
-          setStatusMessage(
-            `Found ${allPools.length} cached pools. Checking for positions...`
-          );
-        } else {
+        if (!cachedPools) {
           setStatusMessage(
             "No cached pools found. Please visit the Pools page first to load available pools."
           );
           setIsLoading(false);
           return;
         }
+
+        const allPools: any[] = JSON.parse(cachedPools);
         const totalPools = allPools.length;
-        const BATCH_SIZE = 5;
-        const DELAY_BETWEEN_BATCHES = 2000;
+        setStatusMessage(
+          `Found ${totalPools} cached pools. Checking for your positions...`
+        );
+
+        // --- 3. OPTIMIZED: Parallel Position Fetching in Batches ---
+        const BATCH_SIZE = 20; // Increased for better performance
         let allFoundPositions: {
           positionInfo: PositionInfo;
           poolAddress: string;
         }[] = [];
+
         const fetchPositionsWithRetry = async (pool: any) => {
           const MAX_RETRIES = 3;
-          const RETRY_DELAY = 2500;
+          const RETRY_DELAY = 1500;
           for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             try {
               const userPositions = await sdk.getUserPositions({
@@ -160,74 +170,80 @@ const PositionsPageContent = () => {
                 poolAddress: pool.address,
               }));
             } catch (error: any) {
-              if (!error.message?.includes("429") || attempt === MAX_RETRIES) {
+              if (error.message?.includes("429") && attempt < MAX_RETRIES) {
+                console.warn(
+                  `Rate limited on pool ${pool.address}. Retrying in ${
+                    RETRY_DELAY / 1000
+                  }s... (Attempt ${attempt})`
+                );
+                await new Promise((res) => setTimeout(res, RETRY_DELAY));
+              } else {
                 console.error(
-                  `Failed to fetch positions for pool ${pool.address} after ${attempt} attempt(s).`,
+                  `Failed to fetch positions for pool ${pool.address} after ${attempt} attempts.`,
                   error.message
                 );
                 finalFailedPools.push(pool.address);
                 return null;
               }
-              console.warn(
-                `Rate limited on pool ${pool.address}. Retrying in ${
-                  RETRY_DELAY / 1000
-                }s... (Attempt ${attempt}/${MAX_RETRIES})`
-              );
-              await new Promise((res) => setTimeout(res, RETRY_DELAY));
             }
           }
           return null;
         };
+
         for (let i = 0; i < totalPools; i += BATCH_SIZE) {
           const batch = allPools.slice(i, i + BATCH_SIZE);
-          const processedCount = i + batch.length;
-          const batchNumber = i / BATCH_SIZE + 1;
+          const processedCount = Math.min(i + BATCH_SIZE, totalPools);
+
           setStatusMessage(
-            `Fetching Batch ${batchNumber} (Pools ${
-              i + 1
-            }–${processedCount} of ${totalPools})...`
+            `Checking pools ${i + 1}–${processedCount} of ${totalPools}...`
           );
+
+          // <<< ETA CALCULATION RE-INTEGRATED HERE >>>
           const elapsedTime = Date.now() - startTime;
-          const avgTimePerPool = elapsedTime / processedCount;
-          const remainingPools = totalPools - processedCount;
-          const etaMs = remainingPools * avgTimePerPool;
-          const etaSeconds = Math.round(etaMs / 1000);
-          const minutes = Math.floor(etaSeconds / 60);
-          const seconds = etaSeconds % 60;
-          setEta(`Est. time remaining: ${minutes}m ${seconds}s`);
-          const batchResults = await Promise.all(
+          if (processedCount > 0) {
+            // Avoid division by zero on the first iteration
+            const avgTimePerPool = elapsedTime / processedCount;
+            const remainingPools = totalPools - processedCount;
+            const etaMs = remainingPools * avgTimePerPool;
+            const etaSeconds = Math.round(etaMs / 1000);
+            const minutes = Math.floor(etaSeconds / 60);
+            const seconds = etaSeconds % 60;
+            setEta(`Est. time remaining: ${minutes}m ${seconds}s`);
+          }
+
+          const batchResults = await Promise.allSettled(
             batch.map((pool) => fetchPositionsWithRetry(pool))
           );
+
           batchResults.forEach((result) => {
-            if (result !== null) {
-              allFoundPositions.push(...result);
+            if (result.status === "fulfilled" && result.value) {
+              allFoundPositions.push(...result.value);
             }
           });
-          if (processedCount < totalPools) {
-            await new Promise((res) => setTimeout(res, DELAY_BETWEEN_BATCHES));
-          }
         }
-        setEta(null);
+
+        // --- 4. Handle No Positions Found (Improved Logic) ---
         if (allFoundPositions.length === 0) {
+          let message = "Scan complete. No liquidity positions found.";
           if (finalFailedPools.length > 0) {
-            setStatusMessage(
-              `Scan complete. Failed to fetch data for ${finalFailedPools.length} pool(s) and no positions found in other pools.`
-            );
-          } else {
-            setStatusMessage(
-              "Scan complete. No liquidity positions found across any pools."
-            );
+            message = `Scan complete. No positions found, and failed to check ${finalFailedPools.length} pool(s).`;
           }
+          setStatusMessage(message);
           setIsLoading(false);
+          setEta(null); // Clear ETA
           return;
         }
+
         setStatusMessage(
           `Found ${allFoundPositions.length} position(s). Fetching details...`
         );
-        const finalData: EnrichedPositionData[] = [];
+        setEta(null); // Clear ETA while enriching details
+
+        // --- 5. OPTIMIZED: Parallel Enrichment of Found Positions ---
         const poolDetailsCache = new Map<string, any>();
-        for (const { positionInfo, poolAddress } of allFoundPositions) {
-          try {
+
+        const enrichmentPromises = allFoundPositions.map(
+          async ({ positionInfo, poolAddress }) => {
             let pairAccount = poolDetailsCache.get(poolAddress);
             if (!pairAccount) {
               pairAccount = await sdk.getPairAccount(
@@ -235,27 +251,38 @@ const PositionsPageContent = () => {
               );
               poolDetailsCache.set(poolAddress, pairAccount);
             }
+
             const [baseToken, quoteToken] = await Promise.all([
               getTokenInfo(pairAccount.tokenMintX.toString()),
               getTokenInfo(pairAccount.tokenMintY.toString()),
             ]);
-            finalData.push({
+
+            return {
               key: positionInfo.positionMint,
               position: positionInfo,
               poolDetails: pairAccount,
               baseToken,
               quoteToken,
               poolAddress: poolAddress,
-            });
-          } catch (e) {
-            console.error(
-              `Failed to enrich position ${positionInfo.positionMint}:`,
-              e
-            );
+            };
           }
-        }
+        );
+
+        const settledResults = await Promise.allSettled(enrichmentPromises);
+
+        const finalData: EnrichedPositionData[] = [];
+        settledResults.forEach((result) => {
+          if (result.status === "fulfilled") {
+            finalData.push(result.value);
+          } else {
+            console.error("Failed to enrich a position:", result.reason);
+          }
+        });
+
         setAllEnrichedPositions(finalData);
         sessionStorage.setItem(CACHE_KEY, JSON.stringify(finalData));
+
+        // --- 6. Final Status Update (Unchanged) ---
         if (finalFailedPools.length > 0) {
           setStatusMessage(
             `Scan complete. Failed to fetch data for ${finalFailedPools.length} pool(s). Results may be incomplete.`
@@ -271,7 +298,7 @@ const PositionsPageContent = () => {
         setStatusMessage("An error occurred. Check console for details.");
       } finally {
         setIsLoading(false);
-        setEta(null);
+        setEta(null); // Ensure ETA is cleared on completion or error
       }
     },
     [sdk, publicKey]
