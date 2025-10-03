@@ -11,7 +11,7 @@ import { PositionCard } from './PositionCard';
 import { RemoveLiquidityModal } from './modals/RemoveLiquidityModal';
 import { RebalanceModal } from './modals/RebalanceModal';
 import { BurnPositionModal } from './modals/BurnPositionModal';
-import { EnrichedPositionData } from '@/app/positions/page';
+import { EnrichedPositionData } from '@/app/(dashboard)/positions/page';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';

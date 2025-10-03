@@ -34,54 +34,12 @@ const DashboardContent = () => {
     }
   }, [connected, connection, wallet]);
 
-  useEffect(() => {
-    if (!connected) {
-      router.push("/");
-    }
-  }, [connected, router]);
-
   const handleNavigation = (section: "pools" | "positions") => {
     router.push(`/${section}`);
   };
 
   return (
     <div className="flex min-h-screen w-full flex-col">
-      <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background/80 px-4 backdrop-blur-sm md:px-6">
-        <nav className="hidden flex-col gap-6 text-lg font-medium md:flex md:flex-row md:items-center md:gap-5 md:text-sm lg:gap-6">
-          <a
-            href="/dashboard"
-            className="flex items-center gap-2 font-bold text-foreground"
-          >
-            <Layers className="h-6 w-6" />
-            <span>Saros DLMM</span>
-          </a>
-          <a
-            href="/dashboard"
-            className="flex items-center gap-2 text-foreground transition-colors hover:text-foreground/80"
-          >
-            <LayoutDashboard className="h-4 w-4" />
-            Dashboard
-          </a>
-          <a
-            href="/pools"
-            className="flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground/80"
-          >
-            <Waves className="h-4 w-4" />
-            Pools
-          </a>
-          <a
-            href="/positions"
-            className="flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground/80"
-          >
-            <FolderKanban className="h-4 w-4" />
-            My Positions
-          </a>
-        </nav>
-        <div className="ml-auto flex items-center gap-4">
-          <ThemeToggle />
-          <WalletMultiButton />
-        </div>
-      </header>
       <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
         {!connected || !sdk || !publicKey ? (
           <div className="flex flex-1 items-center justify-center">

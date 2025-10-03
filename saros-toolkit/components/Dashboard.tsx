@@ -5,7 +5,7 @@ import React, { useState, useEffect } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { LiquidityBookServices } from '@saros-finance/dlmm-sdk';
-import { EnrichedPositionData } from '@/app/positions/page';
+import { EnrichedPositionData } from '@/app/(dashboard)/positions/page';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Wallet, Layers, CheckCircle, TrendingUp, Plus, LayoutGrid, AlertCircle } from "lucide-react";

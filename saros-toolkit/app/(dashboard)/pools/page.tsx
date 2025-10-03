@@ -5,26 +5,25 @@ import { LiquidityBookServices, MODE } from "@saros-finance/dlmm-sdk";
 import { PoolList } from "@/components/PoolList";
 import { PublicKey } from "@solana/web3.js";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { getTokenInfo } from "@/utils/token";
 import { AnchorProvider, setProvider } from "@coral-xyz/anchor";
 import { useRouter } from "next/navigation";
 import { getPriceFromId } from "@saros-finance/dlmm-sdk/utils/price";
-import { LayoutDashboard, Waves, FolderKanban, Layers } from "lucide-react";
 
 const PoolsPageContent = () => {
   const { connection } = useConnection();
-  const wallet = useWallet();
-  const { connected } = wallet;
+  const wallet = useWallet(); // The layout guarantees the wallet is connected.
   const router = useRouter();
 
   const [pools, setPools] = useState<any[]>([]);
+  // FIX: Updated the initial loading text.
   const [loadingText, setLoadingText] = useState(
-    "Please connect your wallet..."
+    "Initializing..."
   );
 
   const sdk = useMemo(() => {
-    if (!connected || !wallet || !wallet.publicKey) return null;
+    // This check is good practice.
+    if (!wallet || !wallet.publicKey) return null;
     const provider = new AnchorProvider(
       connection,
       wallet as any,
@@ -34,8 +33,9 @@ const PoolsPageContent = () => {
     const sdkInstance = new LiquidityBookServices({ mode: MODE.DEVNET });
     sdkInstance.connection = connection;
     return sdkInstance;
-  }, [connected, connection, wallet]);
+  }, [connection, wallet]);
 
+  
   const fetchAndFilterPools = useCallback(
     async (forceRefresh: boolean = false) => {
       if (!sdk) return;
@@ -157,57 +157,18 @@ const PoolsPageContent = () => {
     await fetchAndFilterPools(true);
   };
 
-  useEffect(() => {
-    if (connected && sdk) {
-      fetchAndFilterPools();
-    } else if (!connected) {
-      setLoadingText("Please connect your wallet...");
-      setPools([]);
-    }
-  }, [connected, sdk, fetchAndFilterPools]);
-
   const handlePoolSelect = (address: string) => {
     router.push(`/pools/${address}`);
   };
 
+    useEffect(() => {
+    if (sdk) {
+      fetchAndFilterPools(false); // `false` = try loading from cache first
+    }
+  }, [sdk, fetchAndFilterPools]);
+  
   return (
     <div className="flex min-h-screen w-full flex-col">
-      <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background/80 px-4 backdrop-blur-sm md:px-6">
-        <nav className="hidden flex-col gap-6 text-lg font-medium md:flex md:flex-row md:items-center md:gap-5 md:text-sm lg:gap-6">
-          <a
-            href="/dashboard"
-            className="flex items-center gap-2 font-bold text-foreground"
-          >
-            <Layers className="h-6 w-6" />
-            <span>Saros DLMM</span>
-          </a>
-          <a
-            href="/dashboard"
-            className="flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <LayoutDashboard className="h-4 w-4" />
-            Dashboard
-          </a>
-          <a
-            href="/pools"
-            className="flex items-center gap-2 text-foreground transition-colors hover:text-foreground/80"
-          >
-            <Waves className="h-4 w-4" />
-            Pools
-          </a>
-          <a
-            href="/positions"
-            className="flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <FolderKanban className="h-4 w-4" />
-            My Positions
-          </a>
-        </nav>
-        <div className="ml-auto flex items-center gap-4">
-          <WalletMultiButton />
-        </div>
-      </header>
-
       <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
         <div className="animate-slide-up">
           <h2 className="text-3xl font-bold tracking-tight">Liquidity Pools</h2>
@@ -216,13 +177,9 @@ const PoolsPageContent = () => {
           </p>
         </div>
 
-        {!connected ? (
-          <div className="flex flex-1 items-center justify-center rounded-lg border-2 border-dashed">
-            <p className="text-muted-foreground">
-              Please connect your wallet to view pools.
-            </p>
-          </div>
-        ) : sdk ? (
+        {/* --- Simplified Conditional Rendering --- */}
+        {/* We no longer check for `connected`. We just check if the SDK is ready. */}
+        {sdk ? (
           <PoolList
             pools={pools}
             onPoolSelect={handlePoolSelect}
@@ -232,7 +189,7 @@ const PoolsPageContent = () => {
             loadingText={loadingText}
           />
         ) : (
-          <div className="flex flex-1 items-center justify-center">
+          <div className="flex flex-1 items-center justify-center rounded-lg border-2 border-dashed">
             <p className="text-muted-foreground">Initializing SDK...</p>
           </div>
         )}

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { LiquidityBookServices } from '@saros-finance/dlmm-sdk';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey, Transaction } from '@solana/web3.js';
-import { EnrichedPositionData } from '@/app/positions/page';
+import { EnrichedPositionData } from '@/app/(dashboard)/positions/page';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
