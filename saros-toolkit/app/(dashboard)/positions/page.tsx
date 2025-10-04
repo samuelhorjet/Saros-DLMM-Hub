@@ -12,7 +12,7 @@ import { RemoveLiquidityModal } from "@/components/modals/RemoveLiquidityModal";
 import { RebalanceModal } from "@/components/modals/RebalanceModal";
 import { useRouter } from "next/navigation";
 import { BurnPositionModal } from "@/components/modals/BurnPositionModal";
-import { RefreshCw, PlusCircle, Search, Zap, Scan, Bot, History } from "lucide-react";
+import { RefreshCw, PlusCircle, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -24,8 +24,10 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Info } from "lucide-react";
 
-// Interfaces (Unchanged)
+// Interfaces
 export interface EnrichedPositionData {
   key: string;
   position: PositionInfo;
@@ -36,7 +38,7 @@ export interface EnrichedPositionData {
 }
 type PositionFilter = "all" | "active" | "inactive" | "empty";
 type SortOption = "desc" | "asc";
-type ScanMode = "fast" | "withLiquidity" | "withoutLiquidity" | "full";
+type ScanMode = "withLiquidity" | "withoutLiquidity" | "full";
 
 const PositionsPageContent = () => {
   const { connection } = useConnection();
@@ -48,13 +50,14 @@ const PositionsPageContent = () => {
   const [allEnrichedPositions, setAllEnrichedPositions] = useState<EnrichedPositionData[]>([]);
   const [statusMessage, setStatusMessage] = useState("Connect your wallet to begin.");
   const [isLoading, setIsLoading] = useState(false);
-  const [loadingMode, setLoadingMode] = useState<ScanMode | null>(null);
   const [eta, setEta] = useState<string | null>(null);
-  
-  // UI State (Unchanged)
+
+  // UI State
   const [positionFilter, setPositionFilter] = useState<PositionFilter>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [sortOption, setSortOption] = useState<SortOption>("desc");
+  const [scanMode, setScanMode] = useState<ScanMode>("withLiquidity");
+
   const [isRemoveModalOpen, setIsRemoveModalOpen] = useState(false);
   const [isRebalanceModalOpen, setIsRebalanceModalOpen] = useState(false);
   const [isBurnModalOpen, setIsBurnModalOpen] = useState(false);
@@ -69,95 +72,111 @@ const PositionsPageContent = () => {
     return sdkInstance;
   }, [connection, wallet, publicKey]);
 
-  // --- NEW CORE SCANNING LOGIC ---
-  const startScan = useCallback(async (mode: ScanMode) => {
+  // --- NEW: AUTOMATIC CACHE LOADING ---
+  const loadPositionsFromCache = useCallback(async () => {
+    if (!publicKey) return;
+    setIsLoading(true);
+    setStatusMessage("Loading cached positions...");
+
+    const positionMap = new Map<string, EnrichedPositionData>();
+    const mainCacheKey = `cachedEnrichedPositions_${publicKey.toBase58()}`;
+
+    // Load from main aggregated cache first
+    const mainCachedData = sessionStorage.getItem(mainCacheKey);
+    if (mainCachedData) {
+      const positions: EnrichedPositionData[] = JSON.parse(mainCachedData);
+      positions.forEach(p => positionMap.set(p.key, p));
+    }
+
+    // Load from individual pool caches (from PoolDetails page)
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key && key.startsWith(`cached_positions_`) && key.endsWith(publicKey.toBase58())) {
+        const item = sessionStorage.getItem(key);
+        if (item) {
+          // This cache is raw `PositionInfo`, it needs to be enriched.
+          // For simplicity and to avoid re-fetching, we'll assume the main cache is the source of truth for enriched data.
+          // This part of the logic remains as a potential enhancement if needed.
+        }
+      }
+    }
+
+    const foundPositions = Array.from(positionMap.values());
+    setAllEnrichedPositions(foundPositions);
+
+    if (foundPositions.length > 0) {
+      setStatusMessage(`Loaded ${foundPositions.length} cached positions. Ready to scan for more.`);
+    } else {
+      setStatusMessage("No cached positions found. Use the scan to find your positions.");
+    }
+    setIsLoading(false);
+  }, [publicKey]);
+
+
+  // --- CORE SCANNING LOGIC ---
+  const startScan = useCallback(async () => {
     if (!sdk || !publicKey) return;
 
     setIsLoading(true);
-    setLoadingMode(mode);
     setEta(null);
-    setStatusMessage(`Starting ${mode} scan...`);
+    setStatusMessage(`Starting scan for pools ${scanMode === 'withLiquidity' ? 'with liquidity' : scanMode === 'withoutLiquidity' ? 'without liquidity' : ' (all)'}...`);
 
     let finalFailedPools: string[] = [];
     let foundPositions: EnrichedPositionData[] = [];
 
     try {
-      if (mode === 'fast') {
-        setStatusMessage("Searching for positions you've recently viewed...");
-        const cachedPositions: EnrichedPositionData[] = [];
-        for (let i = 0; i < sessionStorage.length; i++) {
-            const key = sessionStorage.key(i);
-            if (key && key.startsWith(`cached_positions_`) && key.endsWith(publicKey.toBase58())) {
-                const item = sessionStorage.getItem(key);
-                if (item) {
-                  // This part is complex, as it requires re-enriching or assuming structure.
-                  // For a true fast scan, we'd need to cache the *enriched* data per pool.
-                  // This is a placeholder for that logic.
-                }
-            }
-        }
-        // For now, let's assume a simplified fast scan based on the main cache
-        const mainCacheKey = `cachedEnrichedPositions_${publicKey.toBase58()}`;
-        const cachedData = sessionStorage.getItem(mainCacheKey);
-        if (cachedData) foundPositions = JSON.parse(cachedData);
-        setStatusMessage(`Fast scan complete. Found ${foundPositions.length} cached positions.`);
+      const cachedPoolsJSON = sessionStorage.getItem("cachedPools");
+      if (!cachedPoolsJSON) {
+        setStatusMessage("Pool list not found. Please visit the Pools page first to fetch the list.");
+        setIsLoading(false);
+        return;
+      }
+      const allPools: any[] = JSON.parse(cachedPoolsJSON);
+      let poolsToScan: any[] = [];
 
-      } else {
-        // This logic is for 'withLiquidity', 'withoutLiquidity', and 'full' scans
-        const cachedPoolsJSON = sessionStorage.getItem("cachedPools");
-        if (!cachedPoolsJSON) {
-          setStatusMessage("Pool list not found. Please visit the Pools page first.");
-          setIsLoading(false);
-          setLoadingMode(null);
-          return;
-        }
-        const allPools: any[] = JSON.parse(cachedPoolsJSON);
-        let poolsToScan: any[] = [];
-
-        if (mode === 'withLiquidity') {
-          poolsToScan = allPools.filter(p => p.liquidity > 1);
-        } else if (mode === 'withoutLiquidity') {
-          poolsToScan = allPools.filter(p => p.liquidity <= 1);
-        } else { // 'full'
-          poolsToScan = allPools;
-        }
-
-        if (poolsToScan.length === 0) {
-            setStatusMessage(`No pools found for the '${mode}' scan criteria.`);
-        } else {
-            const scanResults = await executePositionScan(poolsToScan);
-            foundPositions = scanResults.enrichedPositions;
-            finalFailedPools = scanResults.failedPools;
-        }
+      if (scanMode === 'withLiquidity') {
+        poolsToScan = allPools.filter(p => p.liquidity > 1);
+      } else if (scanMode === 'withoutLiquidity') {
+        poolsToScan = allPools.filter(p => p.liquidity <= 1);
+      } else { // 'full'
+        poolsToScan = allPools;
       }
 
-      // Merge results without duplicates
+      if (poolsToScan.length === 0) {
+        setStatusMessage(`No pools found for the selected scan criteria.`);
+      } else {
+        const scanResults = await executePositionScan(poolsToScan);
+        foundPositions = scanResults.enrichedPositions;
+        finalFailedPools = scanResults.failedPools;
+      }
+
+      // Merge results with existing positions, preventing duplicates
       setAllEnrichedPositions(prevPositions => {
         const positionMap = new Map(prevPositions.map(p => [p.key, p]));
         foundPositions.forEach(p => positionMap.set(p.key, p));
-        return Array.from(positionMap.values());
+        const finalPositions = Array.from(positionMap.values());
+
+        // Save the newly combined results to the main cache
+        sessionStorage.setItem(`cachedEnrichedPositions_${publicKey.toBase58()}`, JSON.stringify(finalPositions));
+
+        return finalPositions;
       });
 
-      // Save the combined results to the main cache
-      const positionMap = new Map(allEnrichedPositions.map(p => [p.key, p]));
-      foundPositions.forEach(p => positionMap.set(p.key, p));
-      sessionStorage.setItem(`cachedEnrichedPositions_${publicKey.toBase58()}`, JSON.stringify(Array.from(positionMap.values())));
-      
-      if(finalFailedPools.length > 0) {
+      if (finalFailedPools.length > 0) {
         setStatusMessage(`Scan complete. Found ${foundPositions.length} new positions. Failed to check ${finalFailedPools.length} pools.`);
-      } else if (mode !== 'fast') {
+      } else {
         setStatusMessage(`Scan complete. Found ${foundPositions.length} new positions.`);
       }
 
     } catch (err) {
-      console.error(`Error during ${mode} scan:`, err);
+      console.error(`Error during ${scanMode} scan:`, err);
       setStatusMessage("An error occurred. Check the console for details.");
     } finally {
       setIsLoading(false);
-      setLoadingMode(null);
       setEta(null);
     }
-  }, [sdk, publicKey, allEnrichedPositions]);
+  }, [sdk, publicKey, scanMode]);
+
 
   // --- HELPER FUNCTION FOR EXECUTING THE SCAN ---
   const executePositionScan = async (poolsToScan: any[]) => {
@@ -165,104 +184,102 @@ const PositionsPageContent = () => {
 
     const startTime = Date.now();
     const totalPools = poolsToScan.length;
-    const BATCH_SIZE = 5; // A reasonable size for a good RPC
+    const BATCH_SIZE = 10;
     const finalFailedPools: string[] = [];
     let allFoundPositions: { positionInfo: PositionInfo; poolAddress: string; }[] = [];
 
     for (let i = 0; i < totalPools; i += BATCH_SIZE) {
-        const batch = poolsToScan.slice(i, i + BATCH_SIZE);
-        const processedCount = Math.min(i + BATCH_SIZE, totalPools);
-        
-        setStatusMessage(`Scanning pools ${i + 1}–${processedCount} of ${totalPools}...`);
+      const batch = poolsToScan.slice(i, i + BATCH_SIZE);
+      const processedCount = Math.min(i + BATCH_SIZE, totalPools);
 
-        const elapsedTime = Date.now() - startTime;
-        if (processedCount > 0) {
-            const avgTimePerBatch = elapsedTime / (i / BATCH_SIZE + 1);
-            const remainingBatches = Math.ceil((totalPools - processedCount) / BATCH_SIZE);
-            const etaMs = remainingBatches * avgTimePerBatch;
-            const etaSeconds = Math.round(etaMs / 1000);
-            const minutes = Math.floor(etaSeconds / 60);
-            const seconds = etaSeconds % 60;
-            setEta(`Est. time remaining: ${minutes}m ${seconds}s`);
+      setStatusMessage(`Scanning pools ${i + 1}–${processedCount} of ${totalPools}...`);
+
+      const elapsedTime = Date.now() - startTime;
+      if (processedCount > 0) {
+        const avgTimePerBatch = elapsedTime / (i / BATCH_SIZE + 1);
+        const remainingBatches = Math.ceil((totalPools - processedCount) / BATCH_SIZE);
+        const etaMs = remainingBatches * avgTimePerBatch;
+        const etaSeconds = Math.round(etaMs / 1000);
+        const minutes = Math.floor(etaSeconds / 60);
+        const seconds = etaSeconds % 60;
+        setEta(`Est. time remaining: ${minutes}m ${seconds}s`);
+      }
+
+      const batchPromises = batch.map(pool => fetchPositionsWithRetry(pool.address, finalFailedPools));
+      const batchResults = await Promise.allSettled(batchPromises);
+
+      batchResults.forEach(result => {
+        if (result.status === 'fulfilled' && result.value) {
+          allFoundPositions.push(...result.value);
         }
-
-        const batchPromises = batch.map(pool => fetchPositionsWithRetry(pool.address, finalFailedPools));
-        const batchResults = await Promise.allSettled(batchPromises);
-
-        batchResults.forEach(result => {
-            if (result.status === 'fulfilled' && result.value) {
-                allFoundPositions.push(...result.value);
-            }
-        });
+      });
     }
 
     if (allFoundPositions.length === 0) {
-        return { enrichedPositions: [], failedPools: finalFailedPools };
+      return { enrichedPositions: [], failedPools: finalFailedPools };
     }
 
     setStatusMessage(`Found ${allFoundPositions.length} raw position(s). Fetching details...`);
     setEta(null);
 
-    // Parallel Enrichment
     const enrichmentPromises = allFoundPositions.map(async ({ positionInfo, poolAddress }) => {
-        try {
-            const pairAccount = await sdk.getPairAccount(new PublicKey(poolAddress));
-            const [baseToken, quoteToken] = await Promise.all([
-                getTokenInfo(pairAccount.tokenMintX.toString()),
-                getTokenInfo(pairAccount.tokenMintY.toString()),
-            ]);
-            return {
-                key: positionInfo.positionMint,
-                position: positionInfo,
-                poolDetails: pairAccount,
-                baseToken,
-                quoteToken,
-                poolAddress,
-            };
-        } catch (e) {
-            console.error(`Failed to enrich position ${positionInfo.positionMint}`, e);
-            return null;
-        }
+      try {
+        const pairAccount = await sdk.getPairAccount(new PublicKey(poolAddress));
+        const [baseToken, quoteToken] = await Promise.all([
+          getTokenInfo(pairAccount.tokenMintX.toString()),
+          getTokenInfo(pairAccount.tokenMintY.toString()),
+        ]);
+        return {
+          key: positionInfo.positionMint,
+          position: positionInfo,
+          poolDetails: pairAccount,
+          baseToken,
+          quoteToken,
+          poolAddress,
+        };
+      } catch (e) {
+        console.error(`Failed to enrich position ${positionInfo.positionMint}`, e);
+        return null;
+      }
     });
 
     const settledResults = await Promise.allSettled(enrichmentPromises);
     const enrichedPositions: EnrichedPositionData[] = [];
     settledResults.forEach(result => {
-        if (result.status === 'fulfilled' && result.value) {
-            enrichedPositions.push(result.value);
-        }
+      if (result.status === 'fulfilled' && result.value) {
+        enrichedPositions.push(result.value);
+      }
     });
-    
+
     return { enrichedPositions, failedPools: finalFailedPools };
   };
 
-  // --- HELPER WITH RETRY LOGIC (RESTORED) ---
   const fetchPositionsWithRetry = async (poolAddress: string, failedPools: string[]) => {
     if (!sdk || !publicKey) return [];
-    
+
     const MAX_RETRIES = 3;
     const RETRY_DELAY = 2500;
-    
+
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        try {
-            const userPositions = await sdk.getUserPositions({
-                payer: publicKey,
-                pair: new PublicKey(poolAddress),
-            });
-            if (!userPositions || userPositions.length === 0) return [];
-            return userPositions.map((p) => ({
-                positionInfo: p,
-                poolAddress: poolAddress,
-            }));
-        } catch (error: any) {
-            if (attempt === MAX_RETRIES || !error.message?.includes("429")) {
-                console.error(`Failed to fetch from pool ${poolAddress} after ${attempt} attempts.`, error.message);
-                failedPools.push(poolAddress);
-                return null;
-            }
-            console.warn(`Rate limited on pool ${poolAddress}. Retrying... (Attempt ${attempt})`);
-            await new Promise((res) => setTimeout(res, RETRY_DELAY * attempt)); // Exponential backoff
+      try {
+        const userPositions = await sdk.getUserPositions({
+          payer: publicKey,
+          pair: new PublicKey(poolAddress),
+        });
+        if (!userPositions || userPositions.length === 0) return [];
+        return userPositions.map((p) => ({
+          positionInfo: p,
+          poolAddress: poolAddress,
+        }));
+      } catch (error: any) {
+        if (attempt === MAX_RETRIES || !error.message?.includes("429")) {
+          console.error(`Failed to fetch from pool ${poolAddress} after ${attempt} attempts.`, error.message);
+          failedPools.push(poolAddress);
+          return null;
         }
+        console.warn(`Rate limited on pool ${poolAddress}. Retrying... (Attempt ${attempt})`);
+        await new Promise((res) => setTimeout(res, RETRY_DELAY * attempt));
+      }
     }
     return null;
   };
@@ -270,12 +287,11 @@ const PositionsPageContent = () => {
   // --- Initial Load Effect ---
   useEffect(() => {
     if (sdk && publicKey) {
-      setStatusMessage("Ready. Choose a scan method to find your positions.");
-      startScan('fast'); // Automatically run the fast scan on load
+      loadPositionsFromCache();
     }
-  }, [sdk, publicKey]);
+  }, [sdk, publicKey, loadPositionsFromCache]);
 
-  // Unchanged utility functions and memoized calculations
+
   const handleSelectPosition = (positionData: EnrichedPositionData) => {
     sessionStorage.setItem(`position_details_${positionData.key}`, JSON.stringify(positionData));
     router.push(`/positions/${positionData.key}`);
@@ -284,7 +300,7 @@ const PositionsPageContent = () => {
     setIsRemoveModalOpen(false);
     setIsRebalanceModalOpen(false);
     setIsBurnModalOpen(false);
-    startScan('fast'); // A fast refresh is usually enough after a transaction
+    loadPositionsFromCache();
   };
   const openModal = (type: "remove" | "rebalance" | "burn", position: EnrichedPositionData) => {
     setSelectedPosition(position);
@@ -293,7 +309,6 @@ const PositionsPageContent = () => {
     if (type === "burn") setIsBurnModalOpen(true);
   };
   const processedPositions = useMemo(() => {
-    // ... (This logic is unchanged)
     const lowerSearch = searchTerm.toLowerCase();
     let filtered = allEnrichedPositions
       .filter((p) => {
@@ -311,7 +326,7 @@ const PositionsPageContent = () => {
     filtered.sort((a, b) => {
       const liqA = a.position.liquidityShares.reduce((acc, val) => acc + BigInt(val), BigInt(0));
       const liqB = b.position.liquidityShares.reduce((acc, val) => acc + BigInt(val), BigInt(0));
-      if (sortOption === "desc") { return liqB > liqA ? 1 : -1; } 
+      if (sortOption === "desc") { return liqB > liqA ? 1 : -1; }
       else { return liqA > liqB ? 1 : -1; }
     });
     return filtered;
@@ -349,7 +364,7 @@ const PositionsPageContent = () => {
           <CardDescription>{statusMessage}</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">Try using one of the scan methods above to find your positions.</p>
+          <p className="text-sm text-muted-foreground">Use the refresh button to scan the blockchain for your positions.</p>
         </CardContent>
       </Card>
     );
@@ -360,67 +375,74 @@ const PositionsPageContent = () => {
       <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
         <div className="animate-slide-up space-y-2">
           <h2 className="text-3xl font-bold tracking-tight">My Positions</h2>
-          <p className="text-muted-foreground">Scan the blockchain to find and manage your liquidity positions.</p>
+          <p className="text-muted-foreground">Manage your cached liquidity positions or scan the blockchain to find more.</p>
         </div>
 
         {/* --- NEW SCANNING UI --- */}
-        <Card className="animate-slide-up">
-          <CardHeader>
-            <CardTitle>Scan for Positions</CardTitle>
-            <CardDescription>Choose a method to find your positions. Start with a fast scan.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <Button onClick={() => startScan('fast')} disabled={isLoading} variant="outline">
-              <History className={`h-4 w-4 mr-2 ${loadingMode === 'fast' ? 'animate-spin' : ''}`} /> Fast Scan
-              <span className="text-xs text-muted-foreground ml-2">(Cached)</span>
-            </Button>
-            <Button onClick={() => startScan('withLiquidity')} disabled={isLoading}>
-              <Zap className={`h-4 w-4 mr-2 ${loadingMode === 'withLiquidity' ? 'animate-spin' : ''}`} /> Scan Active Pools
-              <span className="text-xs text-muted-foreground ml-2">(~1 min)</span>
-            </Button>
-            <Button onClick={() => startScan('withoutLiquidity')} disabled={isLoading} variant="secondary">
-              <Bot className={`h-4 w-4 mr-2 ${loadingMode === 'withoutLiquidity' ? 'animate-spin' : ''}`} /> Scan Inactive Pools
-              <span className="text-xs text-muted-foreground ml-2">(Slow)</span>
-            </Button>
-            <Button onClick={() => startScan('full')} disabled={isLoading} variant="destructive">
-              <Scan className={`h-4 w-4 mr-2 ${loadingMode === 'full' ? 'animate-spin' : ''}`} /> Full Rescan
-               <span className="text-xs text-muted-foreground ml-2">(Very Slow)</span>
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* --- FILTER & SEARCH UI (Unchanged) --- */}
         <div className="flex flex-col gap-4 md:flex-row md:items-center">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-            <Input placeholder="Filter found positions..." className="pl-10" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+            <Input placeholder="Filter found positions by symbol or address..." className="pl-10" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
           </div>
-          <div className="flex flex-col gap-2 md:flex-row md:items-center">
-            <Select value={positionFilter} onValueChange={(v) => setPositionFilter(v as PositionFilter)}>
-              <SelectTrigger className="w-full md:w-[150px]"><SelectValue placeholder="Filter..." /></SelectTrigger>
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-end">
+             <Select value={scanMode} onValueChange={(v) => setScanMode(v as ScanMode)}>
+              <SelectTrigger className="w-full md:w-[200px]">
+                <SelectValue placeholder="Select scan method..." />
+              </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Positions</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="inactive">Out of Range</SelectItem>
-                <SelectItem value="empty">Empty</SelectItem>
+                <SelectItem value="withLiquidity">Scan Active Pools</SelectItem>
+                <SelectItem value="withoutLiquidity">Scan Inactive Pools</SelectItem>
+                <SelectItem value="full">Scan All Pools</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={sortOption} onValueChange={(v) => setSortOption(v as SortOption)}>
-              <SelectTrigger className="w-full md:w-[240px]"><SelectValue placeholder="Sort by..." /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="desc">Sort by Liquidity: High to Low</SelectItem>
-                <SelectItem value="asc">Sort by Liquidity: Low to High</SelectItem>
-              </SelectContent>
-            </Select>
+            <Button onClick={startScan} disabled={isLoading} className="w-full md:w-auto">
+              <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
             <Button onClick={() => router.push("/pools")} className="w-full md:w-auto">
               <PlusCircle className="h-4 w-4 mr-2" /> Add Liquidity
             </Button>
           </div>
         </div>
 
+        {scanMode === 'full' && !isLoading && (
+            <Alert variant="default" className="animate-fade-in">
+                <Info className="h-4 w-4" />
+                <AlertTitle>Heads Up!</AlertTitle>
+                <AlertDescription>
+                    The "Scan All Pools" option is very slow and may take several minutes to complete. We recommend using "Scan Active Pools" first.
+                </AlertDescription>
+            </Alert>
+        )}
+
+        {/* --- FILTER UI --- */}
+        <div className="flex flex-col gap-4 md:flex-row md:items-center">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center">
+             <span className="text-sm font-medium text-muted-foreground mr-2">Filter by:</span>
+            <Select value={positionFilter} onValueChange={(v) => setPositionFilter(v as PositionFilter)}>
+              <SelectTrigger className="w-full md:w-[150px]"><SelectValue placeholder="Filter..." /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Positions</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">InActive</SelectItem>
+                <SelectItem value="empty">Empty</SelectItem>
+              </SelectContent>
+            </Select>
+            <span className="text-sm font-medium text-muted-foreground mr-2 md:ml-4">Sort by:</span>
+            <Select value={sortOption} onValueChange={(v) => setSortOption(v as SortOption)}>
+              <SelectTrigger className="w-full md:w-[240px]"><SelectValue placeholder="Sort by..." /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="desc">Liquidity: High to Low</SelectItem>
+                <SelectItem value="asc">Liquidity: Low to High</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+
         <div className="mt-4">{renderContent()}</div>
 
-        {/* Modals (Unchanged) */}
+        {/* Modals */}
         {sdk && (
           <>
             <RemoveLiquidityModal isOpen={isRemoveModalOpen} onClose={() => setIsRemoveModalOpen(false)} sdk={sdk} positionToRemove={selectedPosition} onSuccess={handleRefreshAndCloseModals} />
