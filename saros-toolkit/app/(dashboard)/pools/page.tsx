@@ -41,7 +41,7 @@ const PoolsPageContent = () => {
       if (!sdk) return;
       try {
         if (!forceRefresh && typeof window !== "undefined") {
-          const cachedPools = sessionStorage.getItem("cachedPools");
+          const cachedPools = localStorage.getItem("cachedPools");
           if (cachedPools) {
             setPools(JSON.parse(cachedPools));
             setLoadingText("");
@@ -131,7 +131,7 @@ const PoolsPageContent = () => {
         }
 
         if (typeof window !== "undefined") {
-          sessionStorage.setItem(
+          localStorage.setItem(
             "cachedPools",
             JSON.stringify(allFetchedPools)
           );
@@ -152,7 +152,7 @@ const PoolsPageContent = () => {
     setLoadingText("Refreshing pool list...");
     setPools([]);
     if (typeof window !== "undefined") {
-      sessionStorage.removeItem("cachedPools");
+      localStorage.removeItem("cachedPools");
     }
     await fetchAndFilterPools(true);
   };

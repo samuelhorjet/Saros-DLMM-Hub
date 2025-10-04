@@ -101,21 +101,21 @@ const PositionsPageContent = () => {
     const mainCacheKey = `cachedEnrichedPositions_${publicKey.toBase58()}`;
 
     // Load from main aggregated cache first
-    const mainCachedData = sessionStorage.getItem(mainCacheKey);
+    const mainCachedData = localStorage.getItem(mainCacheKey);
     if (mainCachedData) {
       const positions: EnrichedPositionData[] = JSON.parse(mainCachedData);
       positions.forEach((p) => positionMap.set(p.key, p));
     }
 
     // Load from individual pool caches (from PoolDetails page)
-    for (let i = 0; i < sessionStorage.length; i++) {
-      const key = sessionStorage.key(i);
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
       if (
         key &&
         key.startsWith(`cached_positions_`) &&
         key.endsWith(publicKey.toBase58())
       ) {
-        const item = sessionStorage.getItem(key);
+        const item = localStorage.getItem(key);
         if (item) {
           // This cache is raw `PositionInfo`, it needs to be enriched.
           // For simplicity and to avoid re-fetching, we'll assume the main cache is the source of truth for enriched data.
@@ -159,7 +159,7 @@ const PositionsPageContent = () => {
     let foundPositions: EnrichedPositionData[] = [];
 
     try {
-      const cachedPoolsJSON = sessionStorage.getItem("cachedPools");
+      const cachedPoolsJSON = localStorage.getItem("cachedPools");
       if (!cachedPoolsJSON) {
         setStatusMessage(
           "Pool list not found. Please visit the Pools page first to fetch the list."
@@ -194,7 +194,7 @@ const PositionsPageContent = () => {
         const finalPositions = Array.from(positionMap.values());
 
         // Save the newly combined results to the main cache
-        sessionStorage.setItem(
+        localStorage.setItem(
           `cachedEnrichedPositions_${publicKey.toBase58()}`,
           JSON.stringify(finalPositions)
         );
@@ -354,7 +354,7 @@ const PositionsPageContent = () => {
 
   useEffect(() => {
     if (sdk && publicKey) {
-      const cachedPoolsJSON = sessionStorage.getItem("cachedPools");
+      const cachedPoolsJSON = localStorage.getItem("cachedPools");
       if (!cachedPoolsJSON) {
         setIsPoolListMissing(true);
         setStatusMessage(
@@ -386,7 +386,7 @@ const PositionsPageContent = () => {
   }, [sdk, publicKey, loadPositionsFromCache]);
 
   const handleSelectPosition = (positionData: EnrichedPositionData) => {
-    sessionStorage.setItem(
+    localStorage.setItem(
       `position_details_${positionData.key}`,
       JSON.stringify(positionData)
     );

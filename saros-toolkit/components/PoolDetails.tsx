@@ -123,7 +123,7 @@ export const PoolDetails: React.FC<PoolDetailsProps> = ({ sdk, poolAddress, user
         
         const cacheKey = getPositionCacheKey();
         if (!forceRefresh) {
-            const cachedData = sessionStorage.getItem(cacheKey);
+            const cachedData = localStorage.getItem(cacheKey);
             if (cachedData) {
                 try {
                     const cachedPositions = JSON.parse(cachedData);
@@ -147,7 +147,7 @@ export const PoolDetails: React.FC<PoolDetailsProps> = ({ sdk, poolAddress, user
                 const userPositions = await sdk.getUserPositions({ payer: userPublicKey, pair: new PublicKey(poolAddress) });
                 setPositionStatus(`Successfully fetched ${userPositions.length} positions.`);
                 setAllPositions(userPositions);
-                sessionStorage.setItem(cacheKey, JSON.stringify(userPositions));
+                localStorage.setItem(cacheKey, JSON.stringify(userPositions));
                 setLoadingPositions(false);
                 return;
             } catch (err: any) {
@@ -208,7 +208,7 @@ export const PoolDetails: React.FC<PoolDetailsProps> = ({ sdk, poolAddress, user
     };
 
     const handleSelectPosition = (positionData: EnrichedPositionData) => {
-        sessionStorage.setItem(`position_details_${positionData.key}`, JSON.stringify(positionData));
+        localStorage.setItem(`position_details_${positionData.key}`, JSON.stringify(positionData));
         router.push(`/positions/${positionData.key}`);
     };
     

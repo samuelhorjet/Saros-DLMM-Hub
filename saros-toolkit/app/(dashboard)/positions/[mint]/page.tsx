@@ -138,7 +138,7 @@ const PositionDetailsContent = () => {
 
   useEffect(() => {
     if (mintAddress) {
-      const cachedData = sessionStorage.getItem(
+      const cachedData = localStorage.getItem(
         `position_details_${mintAddress}`
       );
       if (cachedData) {
