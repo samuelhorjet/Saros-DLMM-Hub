@@ -229,7 +229,6 @@ const PositionDetailsContent = () => {
         >
           <ArrowLeft className="h-4 w-4 mr-2" /> Back to Positions
         </Button>
-        <WalletMultiButton />
       </header>
 
       <main className="p-4 md:p-8 animate-slide-up">

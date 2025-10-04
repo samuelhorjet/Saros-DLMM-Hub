@@ -23,7 +23,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Info } from "lucide-react";
 
@@ -47,10 +53,18 @@ const PositionsPageContent = () => {
   const router = useRouter();
 
   // State Management
-  const [allEnrichedPositions, setAllEnrichedPositions] = useState<EnrichedPositionData[]>([]);
-  const [statusMessage, setStatusMessage] = useState("Connect your wallet to begin.");
+  const [allEnrichedPositions, setAllEnrichedPositions] = useState<
+    EnrichedPositionData[]
+  >([]);
+  const [statusMessage, setStatusMessage] = useState(
+    "Connect your wallet to begin."
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [eta, setEta] = useState<string | null>(null);
+  const [isPoolListMissing, setIsPoolListMissing] = useState(false);
+  const [poolLookup, setPoolLookup] = useState<
+    Map<string, { liquidity: number }>
+  >(new Map());
 
   // UI State
   const [positionFilter, setPositionFilter] = useState<PositionFilter>("all");
@@ -61,11 +75,16 @@ const PositionsPageContent = () => {
   const [isRemoveModalOpen, setIsRemoveModalOpen] = useState(false);
   const [isRebalanceModalOpen, setIsRebalanceModalOpen] = useState(false);
   const [isBurnModalOpen, setIsBurnModalOpen] = useState(false);
-  const [selectedPosition, setSelectedPosition] = useState<EnrichedPositionData | null>(null);
+  const [selectedPosition, setSelectedPosition] =
+    useState<EnrichedPositionData | null>(null);
 
   const sdk = useMemo(() => {
     if (!wallet || !publicKey) return null;
-    const provider = new AnchorProvider(connection, wallet as any, AnchorProvider.defaultOptions());
+    const provider = new AnchorProvider(
+      connection,
+      wallet as any,
+      AnchorProvider.defaultOptions()
+    );
     setProvider(provider);
     const sdkInstance = new LiquidityBookServices({ mode: MODE.DEVNET });
     sdkInstance.connection = connection;
@@ -85,13 +104,17 @@ const PositionsPageContent = () => {
     const mainCachedData = sessionStorage.getItem(mainCacheKey);
     if (mainCachedData) {
       const positions: EnrichedPositionData[] = JSON.parse(mainCachedData);
-      positions.forEach(p => positionMap.set(p.key, p));
+      positions.forEach((p) => positionMap.set(p.key, p));
     }
 
     // Load from individual pool caches (from PoolDetails page)
     for (let i = 0; i < sessionStorage.length; i++) {
       const key = sessionStorage.key(i);
-      if (key && key.startsWith(`cached_positions_`) && key.endsWith(publicKey.toBase58())) {
+      if (
+        key &&
+        key.startsWith(`cached_positions_`) &&
+        key.endsWith(publicKey.toBase58())
+      ) {
         const item = sessionStorage.getItem(key);
         if (item) {
           // This cache is raw `PositionInfo`, it needs to be enriched.
@@ -105,13 +128,16 @@ const PositionsPageContent = () => {
     setAllEnrichedPositions(foundPositions);
 
     if (foundPositions.length > 0) {
-      setStatusMessage(`Loaded ${foundPositions.length} cached positions. Ready to scan for more.`);
+      setStatusMessage(
+        `Loaded ${foundPositions.length} cached positions. Ready to scan for more.`
+      );
     } else {
-      setStatusMessage("No cached positions found. Use the scan to find your positions.");
+      setStatusMessage(
+        "No cached positions found. Use the scan to find your positions."
+      );
     }
     setIsLoading(false);
   }, [publicKey]);
-
 
   // --- CORE SCANNING LOGIC ---
   const startScan = useCallback(async () => {
@@ -119,7 +145,15 @@ const PositionsPageContent = () => {
 
     setIsLoading(true);
     setEta(null);
-    setStatusMessage(`Starting scan for pools ${scanMode === 'withLiquidity' ? 'with liquidity' : scanMode === 'withoutLiquidity' ? 'without liquidity' : ' (all)'}...`);
+    setStatusMessage(
+      `Starting scan for pools ${
+        scanMode === "withLiquidity"
+          ? "with liquidity"
+          : scanMode === "withoutLiquidity"
+          ? "without liquidity"
+          : " (all)"
+      }...`
+    );
 
     let finalFailedPools: string[] = [];
     let foundPositions: EnrichedPositionData[] = [];
@@ -127,18 +161,21 @@ const PositionsPageContent = () => {
     try {
       const cachedPoolsJSON = sessionStorage.getItem("cachedPools");
       if (!cachedPoolsJSON) {
-        setStatusMessage("Pool list not found. Please visit the Pools page first to fetch the list.");
+        setStatusMessage(
+          "Pool list not found. Please visit the Pools page first to fetch the list."
+        );
         setIsLoading(false);
         return;
       }
       const allPools: any[] = JSON.parse(cachedPoolsJSON);
       let poolsToScan: any[] = [];
 
-      if (scanMode === 'withLiquidity') {
-        poolsToScan = allPools.filter(p => p.liquidity > 1);
-      } else if (scanMode === 'withoutLiquidity') {
-        poolsToScan = allPools.filter(p => p.liquidity <= 1);
-      } else { // 'full'
+      if (scanMode === "withLiquidity") {
+        poolsToScan = allPools.filter((p) => p.liquidity > 1);
+      } else if (scanMode === "withoutLiquidity") {
+        poolsToScan = allPools.filter((p) => p.liquidity <= 1);
+      } else {
+        // 'full'
         poolsToScan = allPools;
       }
 
@@ -151,23 +188,29 @@ const PositionsPageContent = () => {
       }
 
       // Merge results with existing positions, preventing duplicates
-      setAllEnrichedPositions(prevPositions => {
-        const positionMap = new Map(prevPositions.map(p => [p.key, p]));
-        foundPositions.forEach(p => positionMap.set(p.key, p));
+      setAllEnrichedPositions((prevPositions) => {
+        const positionMap = new Map(prevPositions.map((p) => [p.key, p]));
+        foundPositions.forEach((p) => positionMap.set(p.key, p));
         const finalPositions = Array.from(positionMap.values());
 
         // Save the newly combined results to the main cache
-        sessionStorage.setItem(`cachedEnrichedPositions_${publicKey.toBase58()}`, JSON.stringify(finalPositions));
+        sessionStorage.setItem(
+          `cachedEnrichedPositions_${publicKey.toBase58()}`,
+          JSON.stringify(finalPositions)
+        );
 
         return finalPositions;
       });
 
       if (finalFailedPools.length > 0) {
-        setStatusMessage(`Scan complete. Found ${foundPositions.length} new positions. Failed to check ${finalFailedPools.length} pools.`);
+        setStatusMessage(
+          `Scan complete. Found ${foundPositions.length} new positions. Failed to check ${finalFailedPools.length} pools.`
+        );
       } else {
-        setStatusMessage(`Scan complete. Found ${foundPositions.length} new positions.`);
+        setStatusMessage(
+          `Scan complete. Found ${foundPositions.length} new positions.`
+        );
       }
-
     } catch (err) {
       console.error(`Error during ${scanMode} scan:`, err);
       setStatusMessage("An error occurred. Check the console for details.");
@@ -177,7 +220,6 @@ const PositionsPageContent = () => {
     }
   }, [sdk, publicKey, scanMode]);
 
-
   // --- HELPER FUNCTION FOR EXECUTING THE SCAN ---
   const executePositionScan = async (poolsToScan: any[]) => {
     if (!sdk || !publicKey) return { enrichedPositions: [], failedPools: [] };
@@ -186,18 +228,25 @@ const PositionsPageContent = () => {
     const totalPools = poolsToScan.length;
     const BATCH_SIZE = 5;
     const finalFailedPools: string[] = [];
-    let allFoundPositions: { positionInfo: PositionInfo; poolAddress: string; }[] = [];
+    let allFoundPositions: {
+      positionInfo: PositionInfo;
+      poolAddress: string;
+    }[] = [];
 
     for (let i = 0; i < totalPools; i += BATCH_SIZE) {
       const batch = poolsToScan.slice(i, i + BATCH_SIZE);
       const processedCount = Math.min(i + BATCH_SIZE, totalPools);
 
-      setStatusMessage(`Scanning pools ${i + 1}–${processedCount} of ${totalPools}...`);
+      setStatusMessage(
+        `Scanning pools ${i + 1}–${processedCount} of ${totalPools}...`
+      );
 
       const elapsedTime = Date.now() - startTime;
       if (processedCount > 0) {
         const avgTimePerBatch = elapsedTime / (i / BATCH_SIZE + 1);
-        const remainingBatches = Math.ceil((totalPools - processedCount) / BATCH_SIZE);
+        const remainingBatches = Math.ceil(
+          (totalPools - processedCount) / BATCH_SIZE
+        );
         const etaMs = remainingBatches * avgTimePerBatch;
         const etaSeconds = Math.round(etaMs / 1000);
         const minutes = Math.floor(etaSeconds / 60);
@@ -205,11 +254,13 @@ const PositionsPageContent = () => {
         setEta(`Est. time remaining: ${minutes}m ${seconds}s`);
       }
 
-      const batchPromises = batch.map(pool => fetchPositionsWithRetry(pool.address, finalFailedPools));
+      const batchPromises = batch.map((pool) =>
+        fetchPositionsWithRetry(pool.address, finalFailedPools)
+      );
       const batchResults = await Promise.allSettled(batchPromises);
 
-      batchResults.forEach(result => {
-        if (result.status === 'fulfilled' && result.value) {
+      batchResults.forEach((result) => {
+        if (result.status === "fulfilled" && result.value) {
           allFoundPositions.push(...result.value);
         }
       });
@@ -219,34 +270,43 @@ const PositionsPageContent = () => {
       return { enrichedPositions: [], failedPools: finalFailedPools };
     }
 
-    setStatusMessage(`Found ${allFoundPositions.length} raw position(s). Fetching details...`);
+    setStatusMessage(
+      `Found ${allFoundPositions.length} raw position(s). Fetching details...`
+    );
     setEta(null);
 
-    const enrichmentPromises = allFoundPositions.map(async ({ positionInfo, poolAddress }) => {
-      try {
-        const pairAccount = await sdk.getPairAccount(new PublicKey(poolAddress));
-        const [baseToken, quoteToken] = await Promise.all([
-          getTokenInfo(pairAccount.tokenMintX.toString()),
-          getTokenInfo(pairAccount.tokenMintY.toString()),
-        ]);
-        return {
-          key: positionInfo.positionMint,
-          position: positionInfo,
-          poolDetails: pairAccount,
-          baseToken,
-          quoteToken,
-          poolAddress,
-        };
-      } catch (e) {
-        console.error(`Failed to enrich position ${positionInfo.positionMint}`, e);
-        return null;
+    const enrichmentPromises = allFoundPositions.map(
+      async ({ positionInfo, poolAddress }) => {
+        try {
+          const pairAccount = await sdk.getPairAccount(
+            new PublicKey(poolAddress)
+          );
+          const [baseToken, quoteToken] = await Promise.all([
+            getTokenInfo(pairAccount.tokenMintX.toString()),
+            getTokenInfo(pairAccount.tokenMintY.toString()),
+          ]);
+          return {
+            key: positionInfo.positionMint,
+            position: positionInfo,
+            poolDetails: pairAccount,
+            baseToken,
+            quoteToken,
+            poolAddress,
+          };
+        } catch (e) {
+          console.error(
+            `Failed to enrich position ${positionInfo.positionMint}`,
+            e
+          );
+          return null;
+        }
       }
-    });
+    );
 
     const settledResults = await Promise.allSettled(enrichmentPromises);
     const enrichedPositions: EnrichedPositionData[] = [];
-    settledResults.forEach(result => {
-      if (result.status === 'fulfilled' && result.value) {
+    settledResults.forEach((result) => {
+      if (result.status === "fulfilled" && result.value) {
         enrichedPositions.push(result.value);
       }
     });
@@ -254,7 +314,10 @@ const PositionsPageContent = () => {
     return { enrichedPositions, failedPools: finalFailedPools };
   };
 
-  const fetchPositionsWithRetry = async (poolAddress: string, failedPools: string[]) => {
+  const fetchPositionsWithRetry = async (
+    poolAddress: string,
+    failedPools: string[]
+  ) => {
     if (!sdk || !publicKey) return [];
 
     const MAX_RETRIES = 3;
@@ -273,27 +336,60 @@ const PositionsPageContent = () => {
         }));
       } catch (error: any) {
         if (attempt === MAX_RETRIES || !error.message?.includes("429")) {
-          console.error(`Failed to fetch from pool ${poolAddress} after ${attempt} attempts.`, error.message);
+          console.error(
+            `Failed to fetch from pool ${poolAddress} after ${attempt} attempts.`,
+            error.message
+          );
           failedPools.push(poolAddress);
           return null;
         }
-        console.warn(`Rate limited on pool ${poolAddress}. Retrying... (Attempt ${attempt})`);
+        console.warn(
+          `Rate limited on pool ${poolAddress}. Retrying... (Attempt ${attempt})`
+        );
         await new Promise((res) => setTimeout(res, RETRY_DELAY * attempt));
       }
     }
     return null;
   };
 
-  // --- Initial Load Effect ---
   useEffect(() => {
     if (sdk && publicKey) {
-      loadPositionsFromCache();
+      const cachedPoolsJSON = sessionStorage.getItem("cachedPools");
+      if (!cachedPoolsJSON) {
+        setIsPoolListMissing(true);
+        setStatusMessage(
+          "Please visit the Pools page first to fetch the list of available pools."
+        );
+        setAllEnrichedPositions([]); // Clear any stale positions
+        return;
+      }
+
+      try {
+        const allPools: any[] = JSON.parse(cachedPoolsJSON);
+        const lookup = new Map<string, { liquidity: number }>();
+        allPools.forEach((p) =>
+          lookup.set(p.address, { liquidity: p.liquidity })
+        );
+        setPoolLookup(lookup);
+        setIsPoolListMissing(false);
+
+        // Now that we have the pool list, we can load cached positions
+        loadPositionsFromCache();
+      } catch (e) {
+        console.error("Failed to parse cached pools list", e);
+        setIsPoolListMissing(true);
+        setStatusMessage(
+          "There was an error reading the pool list. Please try refreshing the Pools page."
+        );
+      }
     }
   }, [sdk, publicKey, loadPositionsFromCache]);
 
-
   const handleSelectPosition = (positionData: EnrichedPositionData) => {
-    sessionStorage.setItem(`position_details_${positionData.key}`, JSON.stringify(positionData));
+    sessionStorage.setItem(
+      `position_details_${positionData.key}`,
+      JSON.stringify(positionData)
+    );
     router.push(`/positions/${positionData.key}`);
   };
   const handleRefreshAndCloseModals = () => {
@@ -302,43 +398,116 @@ const PositionsPageContent = () => {
     setIsBurnModalOpen(false);
     loadPositionsFromCache();
   };
-  const openModal = (type: "remove" | "rebalance" | "burn", position: EnrichedPositionData) => {
+  const openModal = (
+    type: "remove" | "rebalance" | "burn",
+    position: EnrichedPositionData
+  ) => {
     setSelectedPosition(position);
     if (type === "remove") setIsRemoveModalOpen(true);
     if (type === "rebalance") setIsRebalanceModalOpen(true);
     if (type === "burn") setIsBurnModalOpen(true);
   };
+
   const processedPositions = useMemo(() => {
+    let primaryFiltered = allEnrichedPositions;
+
+    if (poolLookup.size > 0) {
+      // Ensure lookup is ready before filtering
+      if (scanMode === "withLiquidity") {
+        primaryFiltered = allEnrichedPositions.filter((p) => {
+          const poolInfo = poolLookup.get(p.poolAddress);
+          return poolInfo && poolInfo.liquidity > 1;
+        });
+      } else if (scanMode === "withoutLiquidity") {
+        primaryFiltered = allEnrichedPositions.filter((p) => {
+          const poolInfo = poolLookup.get(p.poolAddress);
+          return !poolInfo || poolInfo.liquidity <= 1; // Also include if pool info is somehow missing
+        });
+      }
+      // If scanMode is 'full', we use allEnrichedPositions, so no filter needed here.
+    }
+
+    // 2. Secondary filtering based on search and filter dropdowns
     const lowerSearch = searchTerm.toLowerCase();
-    let filtered = allEnrichedPositions
+    let secondaryFiltered = primaryFiltered
       .filter((p) => {
-        const pairSymbol = `${p.baseToken.symbol}/${p.quoteToken.symbol}`.toLowerCase();
-        return pairSymbol.includes(lowerSearch) || p.poolAddress.toLowerCase().includes(lowerSearch);
+        const pairSymbol =
+          `${p.baseToken.symbol}/${p.quoteToken.symbol}`.toLowerCase();
+        return (
+          pairSymbol.includes(lowerSearch) ||
+          p.poolAddress.toLowerCase().includes(lowerSearch)
+        );
       })
       .filter((p) => {
-        const totalLiquidity = p.position.liquidityShares.reduce((acc, current) => acc + BigInt(current), BigInt(0));
+        const totalLiquidity = p.position.liquidityShares.reduce(
+          (acc, current) => acc + BigInt(current),
+          BigInt(0)
+        );
         if (positionFilter === "empty") return totalLiquidity === BigInt(0);
-        const isActive = p.poolDetails.activeId >= p.position.lowerBinId && p.poolDetails.activeId <= p.position.upperBinId;
-        if (positionFilter === "active") return totalLiquidity > BigInt(0) && isActive;
-        if (positionFilter === "inactive") return totalLiquidity > BigInt(0) && !isActive;
+        const isActive =
+          p.poolDetails.activeId >= p.position.lowerBinId &&
+          p.poolDetails.activeId <= p.position.upperBinId;
+        if (positionFilter === "active")
+          return totalLiquidity > BigInt(0) && isActive;
+        if (positionFilter === "inactive")
+          return totalLiquidity > BigInt(0) && !isActive;
         return true;
       });
-    filtered.sort((a, b) => {
-      const liqA = a.position.liquidityShares.reduce((acc, val) => acc + BigInt(val), BigInt(0));
-      const liqB = b.position.liquidityShares.reduce((acc, val) => acc + BigInt(val), BigInt(0));
-      if (sortOption === "desc") { return liqB > liqA ? 1 : -1; }
-      else { return liqA > liqB ? 1 : -1; }
+
+    // 3. Sorting
+    secondaryFiltered.sort((a, b) => {
+      const liqA = a.position.liquidityShares.reduce(
+        (acc, val) => acc + BigInt(val),
+        BigInt(0)
+      );
+      const liqB = b.position.liquidityShares.reduce(
+        (acc, val) => acc + BigInt(val),
+        BigInt(0)
+      );
+      if (sortOption === "desc") {
+        return liqB > liqA ? 1 : -1;
+      } else {
+        return liqA > liqB ? 1 : -1;
+      }
     });
-    return filtered;
-  }, [allEnrichedPositions, positionFilter, searchTerm, sortOption]);
+
+    return secondaryFiltered;
+  }, [
+    allEnrichedPositions,
+    positionFilter,
+    searchTerm,
+    sortOption,
+    scanMode,
+    poolLookup,
+  ]);
 
   const renderLoadingState = () => (
     <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-      {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-56 w-full" />)}
+      {[...Array(6)].map((_, i) => (
+        <Skeleton key={i} className="h-56 w-full" />
+      ))}
     </div>
   );
 
+  // src/app/(dashboard)/positions/page.tsx
+
   const renderContent = () => {
+    if (isPoolListMissing) {
+      return (
+        <Card className="py-10 text-center">
+          <CardHeader>
+            <CardTitle>Pool List Required</CardTitle>
+            <CardDescription>{statusMessage}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => router.push("/pools")}>
+              Go to Pools Page
+            </Button>
+          </CardContent>
+        </Card>
+      );
+    }
+
     if (isLoading) {
       return (
         <div className="space-y-4 text-center">
@@ -348,23 +517,39 @@ const PositionsPageContent = () => {
         </div>
       );
     }
+
     if (processedPositions.length > 0) {
       return (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
           {processedPositions.map((data) => (
-            <PositionCard key={data.key} enrichedData={data} onRemove={() => openModal("remove", data)} onRebalance={() => openModal("rebalance", data)} onSelect={() => handleSelectPosition(data)} onBurn={() => openModal("burn", data)} />
+            <PositionCard
+              key={data.key}
+              enrichedData={data}
+              onRemove={() => openModal("remove", data)}
+              onRebalance={() => openModal("rebalance", data)}
+              onSelect={() => handleSelectPosition(data)}
+              onBurn={() => openModal("burn", data)}
+            />
           ))}
         </div>
       );
     }
+
     return (
       <Card className="py-10 text-center">
         <CardHeader>
           <CardTitle>No Positions Found</CardTitle>
-          <CardDescription>{statusMessage}</CardDescription>
+          <CardDescription>
+            {allEnrichedPositions.length > 0
+              ? "No positions match the current filter."
+              : statusMessage}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">Use the refresh button to scan the blockchain for your positions.</p>
+          <p className="text-sm text-muted-foreground">
+            Try selecting a different filter or use the refresh button to scan
+            the blockchain.
+          </p>
         </CardContent>
       </Card>
     );
@@ -375,52 +560,82 @@ const PositionsPageContent = () => {
       <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
         <div className="animate-slide-up space-y-2">
           <h2 className="text-3xl font-bold tracking-tight">My Positions</h2>
-          <p className="text-muted-foreground">Manage your cached liquidity positions or scan the blockchain to find more.</p>
+          <p className="text-muted-foreground">
+            Manage your cached liquidity positions or scan the blockchain to
+            find more.
+          </p>
         </div>
 
         {/* --- NEW SCANNING UI --- */}
         <div className="flex flex-col gap-4 md:flex-row md:items-center">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-            <Input placeholder="Filter found positions by symbol or address..." className="pl-10" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+            <Input
+              placeholder="Filter found positions by symbol or address..."
+              className="pl-10"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
           </div>
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-end">
-             <Select value={scanMode} onValueChange={(v) => setScanMode(v as ScanMode)}>
+            <Select
+              value={scanMode}
+              onValueChange={(v) => setScanMode(v as ScanMode)}
+            >
               <SelectTrigger className="w-full md:w-[200px]">
                 <SelectValue placeholder="Select scan method..." />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="withLiquidity">Scan Active Pools</SelectItem>
-                <SelectItem value="withoutLiquidity">Scan Inactive Pools</SelectItem>
+                <SelectItem value="withoutLiquidity">
+                  Scan Inactive Pools
+                </SelectItem>
                 <SelectItem value="full">Scan All Pools</SelectItem>
               </SelectContent>
             </Select>
-            <Button onClick={startScan} disabled={isLoading} className="w-full md:w-auto">
-              <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+            <Button
+              onClick={startScan}
+              disabled={isLoading || isPoolListMissing}
+              className="w-full md:w-auto"
+            >
+              <RefreshCw
+                className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`}
+              />
               Refresh
             </Button>
-            <Button onClick={() => router.push("/pools")} className="w-full md:w-auto">
+            <Button
+              onClick={() => router.push("/pools")}
+              className="w-full md:w-auto"
+            >
               <PlusCircle className="h-4 w-4 mr-2" /> Add Liquidity
             </Button>
           </div>
         </div>
 
-        {scanMode === 'full' && !isLoading && (
-            <Alert variant="default" className="animate-fade-in">
-                <Info className="h-4 w-4" />
-                <AlertTitle>Heads Up!</AlertTitle>
-                <AlertDescription>
-                    The "Scan All Pools" option is very slow and may take several minutes to complete. We recommend using "Scan Active Pools" first.
-                </AlertDescription>
-            </Alert>
+        {scanMode === "full" && !isLoading && (
+          <Alert variant="default" className="animate-fade-in">
+            <Info className="h-4 w-4" />
+            <AlertTitle>Heads Up!</AlertTitle>
+            <AlertDescription>
+              The "Scan All Pools" option is very slow and may take several
+              minutes to complete. We recommend using "Scan Active Pools" first.
+            </AlertDescription>
+          </Alert>
         )}
 
         {/* --- FILTER UI --- */}
         <div className="flex flex-col gap-4 md:flex-row md:items-center">
           <div className="flex flex-col gap-2 md:flex-row md:items-center">
-             <span className="text-sm font-medium text-muted-foreground mr-2">Filter by:</span>
-            <Select value={positionFilter} onValueChange={(v) => setPositionFilter(v as PositionFilter)}>
-              <SelectTrigger className="w-full md:w-[150px]"><SelectValue placeholder="Filter..." /></SelectTrigger>
+            <span className="text-sm font-medium text-muted-foreground mr-2">
+              Filter by:
+            </span>
+            <Select
+              value={positionFilter}
+              onValueChange={(v) => setPositionFilter(v as PositionFilter)}
+            >
+              <SelectTrigger className="w-full md:w-[150px]">
+                <SelectValue placeholder="Filter..." />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Positions</SelectItem>
                 <SelectItem value="active">Active</SelectItem>
@@ -428,9 +643,16 @@ const PositionsPageContent = () => {
                 <SelectItem value="empty">Empty</SelectItem>
               </SelectContent>
             </Select>
-            <span className="text-sm font-medium text-muted-foreground mr-2 md:ml-4">Sort by:</span>
-            <Select value={sortOption} onValueChange={(v) => setSortOption(v as SortOption)}>
-              <SelectTrigger className="w-full md:w-[240px]"><SelectValue placeholder="Sort by..." /></SelectTrigger>
+            <span className="text-sm font-medium text-muted-foreground mr-2 md:ml-4">
+              Sort by:
+            </span>
+            <Select
+              value={sortOption}
+              onValueChange={(v) => setSortOption(v as SortOption)}
+            >
+              <SelectTrigger className="w-full md:w-[240px]">
+                <SelectValue placeholder="Sort by..." />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="desc">Liquidity: High to Low</SelectItem>
                 <SelectItem value="asc">Liquidity: Low to High</SelectItem>
@@ -439,15 +661,32 @@ const PositionsPageContent = () => {
           </div>
         </div>
 
-
         <div className="mt-4">{renderContent()}</div>
 
         {/* Modals */}
         {sdk && (
           <>
-            <RemoveLiquidityModal isOpen={isRemoveModalOpen} onClose={() => setIsRemoveModalOpen(false)} sdk={sdk} positionToRemove={selectedPosition} onSuccess={handleRefreshAndCloseModals} />
-            <RebalanceModal isOpen={isRebalanceModalOpen} onClose={() => setIsRebalanceModalOpen(false)} sdk={sdk} positionToRebalance={selectedPosition} onSuccess={handleRefreshAndCloseModals} />
-            <BurnPositionModal isOpen={isBurnModalOpen} onClose={() => setIsBurnModalOpen(false)} sdk={sdk} positionToBurn={selectedPosition} onSuccess={handleRefreshAndCloseModals} />
+            <RemoveLiquidityModal
+              isOpen={isRemoveModalOpen}
+              onClose={() => setIsRemoveModalOpen(false)}
+              sdk={sdk}
+              positionToRemove={selectedPosition}
+              onSuccess={handleRefreshAndCloseModals}
+            />
+            <RebalanceModal
+              isOpen={isRebalanceModalOpen}
+              onClose={() => setIsRebalanceModalOpen(false)}
+              sdk={sdk}
+              positionToRebalance={selectedPosition}
+              onSuccess={handleRefreshAndCloseModals}
+            />
+            <BurnPositionModal
+              isOpen={isBurnModalOpen}
+              onClose={() => setIsBurnModalOpen(false)}
+              sdk={sdk}
+              positionToBurn={selectedPosition}
+              onSuccess={handleRefreshAndCloseModals}
+            />
           </>
         )}
       </main>
