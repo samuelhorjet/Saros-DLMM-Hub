@@ -136,8 +136,17 @@ export const PoolList: React.FC<PoolListProps> = ({ pools, onPoolSelect, sdk, on
         (pool) => `${pool.baseSymbol}/${pool.quoteSymbol}`.toLowerCase().includes(lowerSearch) || pool.address.toLowerCase().includes(lowerSearch)
       );
     }
+    
+    // Return a new sorted array
     return [...filteredPools].sort((a, b) => {
-      return sortOption === "desc" ? b.liquidity - a.liquidity : a.liquidity - b.liquidity;
+      if (filterOption === 'zero-liquidity') {
+        return 0; // No need to sort if all values are zero
+      }
+      if (sortOption === "desc") {
+        return b.liquidity - a.liquidity;
+      } else {
+        return a.liquidity - b.liquidity;
+      }
     });
   }, [pools, filterOption, sortOption, searchValue]);
 
@@ -210,7 +219,7 @@ export const PoolList: React.FC<PoolListProps> = ({ pools, onPoolSelect, sdk, on
               <SelectItem value="zero-liquidity">Zero Liquidity</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={sortOption} onValueChange={(value) => setSortOption(value as any)}>
+          <Select value={sortOption} onValueChange={(value) => setSortOption(value as any)} disabled={filterOption === 'zero-liquidity'}>
              <SelectTrigger className="w-full md:w-[180px]">
               <SelectValue placeholder="Sort by" />
             </SelectTrigger>

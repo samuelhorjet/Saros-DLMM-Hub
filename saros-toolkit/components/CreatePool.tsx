@@ -366,7 +366,7 @@ export const CreatePool: React.FC<{ sdk: LiquidityBookServices; onPoolCreated: (
         />
       </AnimatePresence>
 
-      <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/80" onClick={onClose}>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80" onClick={onClose}>
         <motion.div 
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}

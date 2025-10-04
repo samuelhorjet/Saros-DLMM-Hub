@@ -455,7 +455,7 @@ const PositionsPageContent = () => {
       });
 
     // 3. Sorting
-    secondaryFiltered.sort((a, b) => {
+    return [...secondaryFiltered].sort((a, b) => {
       const liqA = a.position.liquidityShares.reduce(
         (acc, val) => acc + BigInt(val),
         BigInt(0)
@@ -464,14 +464,11 @@ const PositionsPageContent = () => {
         (acc, val) => acc + BigInt(val),
         BigInt(0)
       );
-      if (sortOption === "desc") {
-        return liqB > liqA ? 1 : -1;
-      } else {
-        return liqA > liqB ? 1 : -1;
-      }
-    });
 
-    return secondaryFiltered;
+      if (liqA < liqB) return sortOption === "desc" ? 1 : -1;
+      if (liqA > liqB) return sortOption === "desc" ? -1 : 1;
+      return 0;
+    });
   }, [
     allEnrichedPositions,
     positionFilter,
@@ -488,8 +485,6 @@ const PositionsPageContent = () => {
       ))}
     </div>
   );
-
-  // src/app/(dashboard)/positions/page.tsx
 
   const renderContent = () => {
     if (isPoolListMissing) {
@@ -554,6 +549,9 @@ const PositionsPageContent = () => {
       </Card>
     );
   };
+
+  const isSortDisabled =
+    positionFilter === "inactive" || positionFilter === "empty";
 
   return (
     <div className="flex min-h-screen w-full flex-col">
@@ -639,7 +637,7 @@ const PositionsPageContent = () => {
               <SelectContent>
                 <SelectItem value="all">All Positions</SelectItem>
                 <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="inactive">InActive</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
                 <SelectItem value="empty">Empty</SelectItem>
               </SelectContent>
             </Select>
@@ -649,6 +647,7 @@ const PositionsPageContent = () => {
             <Select
               value={sortOption}
               onValueChange={(v) => setSortOption(v as SortOption)}
+              disabled={isSortDisabled}
             >
               <SelectTrigger className="w-full md:w-[240px]">
                 <SelectValue placeholder="Sort by..." />

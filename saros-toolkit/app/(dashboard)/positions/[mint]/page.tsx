@@ -220,18 +220,15 @@ const PositionDetailsContent = () => {
   const isActionDisabled = status === "Empty";
 
   return (
-    <div className="min-h-screen w-full">
-      <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b bg-background/80 px-4 backdrop-blur-sm md:px-6">
+    <div className="min-h-screen w-full animate-slide-up">
         <Button
           variant="ghost"
           onClick={() => router.back()}
-          className="text-muted-foreground"
+          className="mb-4 text-muted-foreground"
         >
           <ArrowLeft className="h-4 w-4 mr-2" /> Back to Positions
         </Button>
-      </header>
 
-      <main className="p-4 md:p-8 animate-slide-up">
         <div className="flex items-center gap-4 mb-8">
           <PairLogos baseToken={baseToken} quoteToken={quoteToken} />
           <div>
@@ -342,7 +339,6 @@ const PositionDetailsContent = () => {
             />
           </>
         )}
-      </main>
     </div>
   );
 };
