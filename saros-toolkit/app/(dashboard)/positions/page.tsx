@@ -184,7 +184,7 @@ const PositionsPageContent = () => {
 
     const startTime = Date.now();
     const totalPools = poolsToScan.length;
-    const BATCH_SIZE = 10;
+    const BATCH_SIZE = 5;
     const finalFailedPools: string[] = [];
     let allFoundPositions: { positionInfo: PositionInfo; poolAddress: string; }[] = [];
 
