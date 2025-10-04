@@ -13,6 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ChevronDown, Copy, Search, AlertTriangle, X, Loader2 } from "lucide-react";
+import { addActivityLog } from "@/utils/activityLog";
+import { addUserCreatedPool } from "@/utils/userCreatedPools"; // <-- 1. IMPORT THE NEW UTILITY
 
 // --- CONSTANTS ---
 const SUPPORTED_BIN_STEPS = [1, 2, 4, 5, 8, 10, 20, 25, 40, 50, 80, 100, 200];
@@ -125,7 +127,7 @@ const TokenSelectionModal: React.FC<TokenSelectionModalProps> = ({ isOpen, onClo
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80">
         <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -251,6 +253,7 @@ export const CreatePool: React.FC<{ sdk: LiquidityBookServices; onPoolCreated: (
     setIsProcessing(true);
     setStatusMessage("Verifying token pair...");
     let signature: string | null = null;
+    let finalPoolAddress: string | null = null;
 
     try {
       const [actualBase, actualQuote] = [baseToken, quoteToken].sort((a, b) => a.mintAddress.localeCompare(b.mintAddress));
@@ -276,6 +279,7 @@ export const CreatePool: React.FC<{ sdk: LiquidityBookServices; onPoolCreated: (
         ratePrice: Number(priceInput),
         payer: publicKey,
       });
+      finalPoolAddress = pair.toString();
 
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
       tx.recentBlockhash = blockhash;
@@ -298,8 +302,19 @@ export const CreatePool: React.FC<{ sdk: LiquidityBookServices; onPoolCreated: (
       }
 
       setStatusMessage(`Success! Pool created.`);
-      setNewPoolAddress(pair.toString());
+      setNewPoolAddress(finalPoolAddress);
       setTxSignature(signature);
+
+      // --- 2. LOG ACTIVITY AND SAVE CREATED POOL ---
+      if (signature) {
+        addActivityLog({
+            type: 'Create Pool',
+            details: `Created ${actualBase.symbol}/${actualQuote.symbol} pool`,
+            tx: signature,
+        });
+        addUserCreatedPool(finalPoolAddress, publicKey.toBase58());
+      }
+
     } catch (error: any) {
       console.error("POOL CREATION FAILED", error);
       setStatusMessage(`Error: ${error.message}`);

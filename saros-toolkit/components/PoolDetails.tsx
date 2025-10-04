@@ -20,6 +20,27 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ArrowLeft, Copy, RefreshCw, AlertTriangle } from 'lucide-react';
 
 // --- Helper Components ---
+
+const logoHeaderStyle: React.CSSProperties = {
+  width: 32,
+  height: 32,
+  borderRadius: "50%",
+  border: "2px solid hsl(var(--card))",
+};
+
+const FallbackLogoHeader: React.FC<{ symbol?: string }> = ({ symbol }) => (
+  <div style={{ ...logoHeaderStyle, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: "bold" }} className="text-foreground bg-muted">
+    {symbol ? symbol.charAt(0).toUpperCase() : "?"}
+  </div>
+);
+
+const PairLogosHeader: React.FC<{ baseToken: TokenInfo; quoteToken: TokenInfo; }> = ({ baseToken, quoteToken }) => (
+  <div className="flex items-center">
+    {baseToken.logoURI ? <img src={baseToken.logoURI} alt={baseToken.symbol} style={logoHeaderStyle} /> : <FallbackLogoHeader symbol={baseToken.symbol} />}
+    {quoteToken.logoURI ? <img src={quoteToken.logoURI} alt={quoteToken.symbol} style={{ ...logoHeaderStyle, marginLeft: "-12px" }} /> : <FallbackLogoHeader symbol={quoteToken.symbol} />}
+  </div>
+);
+
 const CopyButton: React.FC<{ textToCopy: string }> = ({ textToCopy }) => {
   const [copied, setCopied] = useState(false);
   const handleCopy = (e: React.MouseEvent) => {
@@ -264,7 +285,8 @@ export const PoolDetails: React.FC<PoolDetailsProps> = ({ sdk, poolAddress, user
         return (
             <Card>
                 <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
+                    <CardTitle className="flex items-center gap-3 text-2xl">
+                        <PairLogosHeader baseToken={baseTokenInfo} quoteToken={quoteTokenInfo} />
                         <span>{baseTokenInfo.symbol} / {quoteTokenInfo.symbol}</span>
                     </CardTitle>
                 </CardHeader>

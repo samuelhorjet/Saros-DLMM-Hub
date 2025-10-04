@@ -6,9 +6,42 @@ import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { LiquidityBookServices } from '@saros-finance/dlmm-sdk';
 import { EnrichedPositionData } from '@/app/(dashboard)/positions/page';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Wallet, Layers, CheckCircle, TrendingUp, Plus, LayoutGrid, AlertCircle } from "lucide-react";
+import { Wallet, Layers, CheckCircle, TrendingUp, Plus, LayoutGrid, AlertCircle, ExternalLink, History, PlusSquare, Copy } from "lucide-react";
+import { CreatePool } from './CreatePool';
+import { Activity, getActivityLog } from '@/utils/activityLog';
+import { getUserCreatedPools } from '@/utils/userCreatedPools'; // <-- IMPORT NEW UTILITY
+import { Skeleton } from './ui/skeleton';
+
+// --- TIME FORMATTING HELPER ---
+function formatTimeAgo(timestamp: number): string {
+    const now = Date.now();
+    const seconds = Math.floor((now - timestamp) / 1000);
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+}
+
+// --- POOL LOGO HELPER ---
+const logoStyle: React.CSSProperties = {
+  width: 28, height: 28, borderRadius: "50%", backgroundColor: "#333", border: "2px solid var(--card)"
+};
+const FallbackLogo: React.FC<{ symbol?: string }> = ({ symbol }) => (
+  <div style={{...logoStyle, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: "bold"}} className="text-foreground bg-muted">
+    {symbol ? symbol.charAt(0).toUpperCase() : "?"}
+  </div>
+);
+const PairLogos: React.FC<{ baseLogo?: string; quoteLogo?: string; baseSymbol?: string; quoteSymbol?: string; }> = ({ baseLogo, quoteLogo, baseSymbol, quoteSymbol }) => (
+  <div className="flex items-center">
+    {baseLogo ? <img src={baseLogo} alt={baseSymbol} style={logoStyle} /> : <FallbackLogo symbol={baseSymbol} />}
+    {quoteLogo ? <img src={quoteLogo} alt={quoteSymbol} style={{ ...logoStyle, marginLeft: "-10px" }} /> : <FallbackLogo symbol={quoteSymbol} />}
+  </div>
+);
 
 interface DashboardProps {
     sdk: LiquidityBookServices;
@@ -42,59 +75,83 @@ export const Dashboard: React.FC<DashboardProps> = ({ sdk, onNavigate }) => {
     const { publicKey } = useWallet();
     const { connection } = useConnection();
 
+    // --- STATE MANAGEMENT ---
+    const [isCreatePoolModalOpen, setIsCreatePoolModalOpen] = useState(false);
+    const [activities, setActivities] = useState<Activity[]>([]);
+    
+    // State for stats, initialized to null for '-' display logic
     const [solBalance, setSolBalance] = useState<number | null>(null);
     const [totalPositions, setTotalPositions] = useState<number | null>(null);
     const [activePositions, setActivePositions] = useState<number | null>(null);
-    const [totalLiquidityValue, setTotalLiquidityValue] = useState<number | null>(null);
+    const [userCreatedPoolsCount, setUserCreatedPoolsCount] = useState<number | null>(null);
+    const [userCreatedPoolsDetails, setUserCreatedPoolsDetails] = useState<any[]>([]);
+
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
+    const fetchDashboardData = async () => {
         if (!publicKey || !sdk) return;
+        setIsLoading(true);
+        setError(null);
+        try {
+            // Fetch SOL Balance
+            const lamports = await connection.getBalance(publicKey);
+            setSolBalance(lamports / LAMPORTS_PER_SOL);
 
-        const fetchDashboardData = async () => {
-            setIsLoading(true);
-            setError(null);
-            try {
-                // Fetch SOL Balance
-                const lamports = await connection.getBalance(publicKey);
-                setSolBalance(lamports / LAMPORTS_PER_SOL);
-
-                // Fetch Position Data from Cache
-                const cachedData = sessionStorage.getItem(`cachedEnrichedPositions_${publicKey.toBase58()}`);
-                if (cachedData) {
-                    const positions: EnrichedPositionData[] = JSON.parse(cachedData);
-                    setTotalPositions(positions.length);
-
-                    const active = positions.filter(p => {
-                        const totalLiquidity = p.position.liquidityShares.reduce((acc, current) => acc + BigInt(current), BigInt(0));
-                        return totalLiquidity > BigInt(0) && p.poolDetails.activeId >= p.position.lowerBinId && p.poolDetails.activeId <= p.position.upperBinId;
-                    }).length;
-                    setActivePositions(active);
-                    
-                    // DEV NOTE: A real implementation requires a price oracle.
-                    // This placeholder remains but is more clearly defined.
-                    setTotalLiquidityValue(positions.length * 123.45); // Placeholder value
-                } else {
-                    // If no cache, we should fetch or show 0. Showing 0 is faster for the dashboard.
-                    setTotalPositions(0);
-                    setActivePositions(0);
-                    setTotalLiquidityValue(0);
-                }
-            } catch (err: any) {
-                console.error("Failed to fetch dashboard data:", err);
-                setError("Could not load your portfolio data. Please try refreshing.");
-            } finally {
-                setIsLoading(false);
+            // Fetch Position Data from Cache and calculate stats
+            const cachedData = localStorage.getItem(`cachedEnrichedPositions_${publicKey.toBase58()}`);
+            if (cachedData) {
+                const positions: EnrichedPositionData[] = JSON.parse(cachedData);
+                setTotalPositions(positions.length);
+                setActivePositions(positions.filter(p => {
+                    const totalLiquidity = p.position.liquidityShares.reduce((acc, current) => acc + BigInt(current), BigInt(0));
+                    return totalLiquidity > BigInt(0) && p.poolDetails.activeId >= p.position.lowerBinId && p.poolDetails.activeId <= p.position.upperBinId;
+                }).length);
+            } else {
+                setTotalPositions(0); // If no cache exists, we know the count is 0 for our app
+                setActivePositions(0);
             }
-        };
 
+            // Fetch User Created Pools Data
+            const createdPoolAddresses = getUserCreatedPools(publicKey.toBase58());
+            setUserCreatedPoolsCount(createdPoolAddresses.length);
+
+            if (createdPoolAddresses.length > 0) {
+                const allPoolsCache = localStorage.getItem('cachedPools');
+                if (allPoolsCache) {
+                    const allPools = JSON.parse(allPoolsCache);
+                    const details = createdPoolAddresses
+                        .map(address => allPools.find((p: any) => p.address === address))
+                        .filter(Boolean); // Filter out any pools that might not be in the main cache
+                    setUserCreatedPoolsDetails(details);
+                }
+            } else {
+                setUserCreatedPoolsDetails([]);
+            }
+
+            // Fetch Activity Log
+            setActivities(getActivityLog());
+
+        } catch (err: any) {
+            console.error("Failed to fetch dashboard data:", err);
+            setError("Could not load your portfolio data. Please try refreshing.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
         fetchDashboardData();
     }, [publicKey, sdk, connection]);
+    
+    const handlePoolCreated = () => {
+        setIsCreatePoolModalOpen(false);
+        fetchDashboardData(); // Re-fetch all dashboard data
+    };
 
-    const formatValue = (value: number | null, decimals: number = 2, unit: string = '') => {
-        if (value === null) return '...';
-        return `${value.toFixed(decimals)}${unit}`;
+    const formatStatValue = (value: number | null) => {
+        if (value === null) return '-';
+        return value;
     };
     
     if (error) {
@@ -108,46 +165,116 @@ export const Dashboard: React.FC<DashboardProps> = ({ sdk, onNavigate }) => {
     }
 
     return (
-        <div className="animate-slide-up space-y-6">
-            <div>
-                <h2 className="text-3xl font-bold tracking-tight">Portfolio Overview</h2>
-                <p className="text-muted-foreground">Here's a snapshot of your liquidity positions and assets.</p>
-            </div>
+        <>
+            {isCreatePoolModalOpen && (
+                <CreatePool 
+                    sdk={sdk} 
+                    onPoolCreated={handlePoolCreated} 
+                    onClose={() => setIsCreatePoolModalOpen(false)} 
+                />
+            )}
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {isLoading ? (
-                    <>
-                        <StatCardSkeleton />
-                        <StatCardSkeleton />
-                        <StatCardSkeleton />
-                        <StatCardSkeleton />
-                    </>
-                ) : (
-                    <>
-                        <StatCard title="SOL Balance" value={formatValue(solBalance, 4, ' SOL')} icon={<Wallet className="h-4 w-4 text-muted-foreground" />} />
-                        <StatCard title="Total Positions" value={totalPositions ?? 0} icon={<Layers className="h-4 w-4 text-muted-foreground" />} />
-                        <StatCard title="Active Positions" value={activePositions ?? 0} icon={<CheckCircle className="h-4 w-4 text-muted-foreground" />} />
-                        <StatCard title="Estimated TVL" value={`$${formatValue(totalLiquidityValue, 2)}`} icon={<TrendingUp className="h-4 w-4 text-muted-foreground" />} />
-                    </>
-                )}
-            </div>
+            <div className="animate-slide-up space-y-6">
+                <div>
+                    <h2 className="text-3xl font-bold tracking-tight">Portfolio Overview</h2>
+                    <p className="text-muted-foreground">Here's a snapshot of your liquidity positions and assets.</p>
+                </div>
 
-            <Card>
-                <CardHeader>
-                    <CardTitle>Quick Actions</CardTitle>
-                </CardHeader>
-                <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                    <Button variant="outline" size="lg" onClick={() => onNavigate('pools')}>
-                        <LayoutGrid /> View & Manage Pools
-                    </Button>
-                     <Button variant="outline" size="lg" onClick={() => onNavigate('pools')}>
-                        <Plus /> Create a New Pool
-                    </Button>
-                    <Button variant="outline" size="lg" onClick={() => onNavigate('positions')}>
-                        <Layers /> View My Positions
-                    </Button>
-                </CardContent>
-            </Card>
-        </div>
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+                    <div className="lg:col-span-2 space-y-6">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                            {isLoading ? (
+                                <>
+                                    <StatCardSkeleton /><StatCardSkeleton /><StatCardSkeleton /><StatCardSkeleton />
+                                </>
+                            ) : (
+                                <>
+                                    <StatCard title="SOL Balance" value={solBalance?.toFixed(4) ?? '-'} icon={<Wallet className="h-4 w-4 text-muted-foreground" />} />
+                                    <StatCard title="Total Positions" value={formatStatValue(totalPositions)} icon={<Layers className="h-4 w-4 text-muted-foreground" />} />
+                                    <StatCard title="Active Positions" value={formatStatValue(activePositions)} icon={<CheckCircle className="h-4 w-4 text-muted-foreground" />} />
+                                    <StatCard title="Pools Created" value={formatStatValue(userCreatedPoolsCount)} icon={<PlusSquare className="h-4 w-4 text-muted-foreground" />} />
+                                </>
+                            )}
+                        </div>
+
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Quick Actions</CardTitle>
+                            </CardHeader>
+                            <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                                <Button variant="outline" size="lg" onClick={() => onNavigate('pools')}>
+                                    <LayoutGrid className="mr-2 h-4 w-4" /> View & Manage Pools
+                                </Button>
+                                <Button variant="default" size="lg" onClick={() => setIsCreatePoolModalOpen(true)}>
+                                    <Plus className="mr-2 h-4 w-4" /> Create a New Pool
+                                </Button>
+                                <Button variant="outline" size="lg" onClick={() => onNavigate('positions')}>
+                                    <Layers className="mr-2 h-4 w-4" /> View My Positions
+                                </Button>
+                            </CardContent>
+                        </Card>
+
+                        {userCreatedPoolsDetails.length > 0 && (
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>My Created Pools</CardTitle>
+                                    <CardDescription>A list of pools you have created with this app.</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    {userCreatedPoolsDetails.map(pool => (
+                                        <div key={pool.address} className="flex items-center justify-between rounded-md border p-3 hover:bg-muted/50">
+                                            <div className="flex items-center gap-3">
+                                                <PairLogos baseLogo={pool.baseLogoURI} quoteLogo={pool.quoteLogoURI} baseSymbol={pool.baseSymbol} quoteSymbol={pool.quoteSymbol} />
+                                                <span className="font-semibold">{pool.baseSymbol}/{pool.quoteSymbol}</span>
+                                            </div>
+                                            <Button variant="ghost" size="sm" onClick={() => onNavigate('pools' as any)}>
+                                                View Pool
+                                            </Button>
+                                        </div>
+                                    ))}
+                                </CardContent>
+                            </Card>
+                        )}
+                    </div>
+
+                    <div className="lg:col-span-1">
+                        <Card className="h-full">
+                            <CardHeader>
+                                <CardTitle className="flex items-center">
+                                    <History className="mr-2 h-5 w-5" /> Recent Activity
+                                </CardTitle>
+                                <CardDescription>Your latest transactions on the protocol.</CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                {isLoading ? (
+                                    <div className="space-y-4">
+                                        {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+                                    </div>
+                                ) : activities.length > 0 ? (
+                                    <div className="space-y-4">
+                                        {activities.map((activity) => (
+                                            <div key={activity.tx} className="flex items-start justify-between">
+                                                <div className="flex-1">
+                                                    <p className="font-semibold text-sm">{activity.type}</p>
+                                                    <p className="text-xs text-muted-foreground">{activity.details}</p>
+                                                </div>
+                                                <div className="text-right ml-2 flex-shrink-0">
+                                                    <a href={`https://solscan.io/tx/${activity.tx}?cluster=devnet`} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-primary hover:underline">
+                                                        View <ExternalLink className="inline-block h-3 w-3" />
+                                                    </a>
+                                                     <p className="text-xs text-muted-foreground">{formatTimeAgo(activity.timestamp)}</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="text-center text-sm text-muted-foreground py-8">No recent activity found.</p>
+                                )}
+                            </CardContent>
+                        </Card>
+                    </div>
+                </div>
+            </div>
+        </>
     );
 };
