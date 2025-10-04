@@ -38,19 +38,21 @@ const PoolDetailsPageContent = () => {
   return (
     <div className="flex min-h-screen w-full flex-col">
       <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
-        {!connected || !sdk || !publicKey ? (
+        {!sdk ? (
           <div className="flex flex-1 items-center justify-center rounded-lg border-2 border-dashed">
             <p className="text-muted-foreground">
               Please connect your wallet to view pool details.
             </p>
           </div>
         ) : (
-          <PoolDetails
-            sdk={sdk}
-            poolAddress={poolAddress}
-            userPublicKey={publicKey}
-            onBack={handleBackToPools}
-          />
+          publicKey && (
+            <PoolDetails
+              sdk={sdk}
+              poolAddress={poolAddress}
+              userPublicKey={publicKey}
+              onBack={handleBackToPools}
+            />
+          )
         )}
       </main>
     </div>

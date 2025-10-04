@@ -15,21 +15,26 @@ export default function DashboardLayout({
 }) {
   const { connected, connecting } = useWallet();
   const router = useRouter();
+  
+  // This state tracks the initial verification process
   const [isVerifying, setIsVerifying] = useState(true);
 
   useEffect(() => {
+    // When the 'connecting' status changes from true to false, the check is complete.
     if (!connecting) {
       setIsVerifying(false);
     }
   }, [connecting]);
 
   useEffect(() => {
+    // Only perform the redirect check *after* the initial verification is done.
     if (!isVerifying && !connected) {
       router.push('/');
     }
   }, [isVerifying, connected, router]);
 
   // --- THIS IS THE NEW LOADING STATE ---
+  // While verifying, show a full-page skeleton to prevent flickers and layout shifts.
   if (isVerifying) {
     return (
       <div className="flex min-h-screen w-full flex-col">
@@ -61,6 +66,7 @@ export default function DashboardLayout({
     );
   }
 
+  // If verification is complete and the user is connected, show the page content.
   if (connected) {
     return (
       <div className="flex min-h-screen w-full flex-col">
@@ -95,6 +101,8 @@ export default function DashboardLayout({
     );
   }
 
+  // If verification is done and user is not connected, show a redirecting message.
+  // The useEffect hook above will handle the actual redirect.
   return (
     <div className="flex h-screen w-full items-center justify-center">
         <p className="text-muted-foreground">Redirecting...</p>
