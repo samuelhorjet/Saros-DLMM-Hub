@@ -4,9 +4,9 @@ import React, { useEffect, useState } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useRouter } from 'next/navigation';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
-import { LayoutDashboard, Waves, FolderKanban, Layers } from 'lucide-react';
+import { LayoutDashboard, Waves, FolderKanban, Layers, Loader2 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { Skeleton } from '@/components/ui/skeleton'; // Make sure Skeleton is imported
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function DashboardLayout({
   children,
@@ -15,30 +15,45 @@ export default function DashboardLayout({
 }) {
   const { connected, connecting } = useWallet();
   const router = useRouter();
-  
-  // This state tracks the initial verification process
-  const [isVerifying, setIsVerifying] = useState(true);
+
+  // We will track two separate conditions for showing the loading screen
+  const [isWalletChecked, setIsWalletChecked] = useState(false);
+  const [isMinTimePassed, setIsMinTimePassed] = useState(false);
 
   useEffect(() => {
-    // When the 'connecting' status changes from true to false, the check is complete.
+    // Condition 1: Wait for the wallet adapter to finish its initial check.
+    // The `connecting` state will be true on page load and false when done.
     if (!connecting) {
-      setIsVerifying(false);
+      setIsWalletChecked(true);
     }
   }, [connecting]);
 
   useEffect(() => {
-    // Only perform the redirect check *after* the initial verification is done.
-    if (!isVerifying && !connected) {
+    // Condition 2: Enforce a minimum loading time of 1.5 seconds.
+    // This prevents content flashing and gives the wallet adapter ample time.
+    const timer = setTimeout(() => {
+      setIsMinTimePassed(true);
+    }, 3000); // 1.5-second delay
+
+    // Cleanup the timer if the component unmounts
+    return () => clearTimeout(timer);
+  }, []); // The empty dependency array ensures this runs only once on mount
+
+  // The final loading state depends on BOTH conditions being met.
+  const isLoading = !isWalletChecked || !isMinTimePassed;
+
+  useEffect(() => {
+    // Only perform the redirect check *after* the loading phase is complete.
+    if (!isLoading && !connected) {
       router.push('/');
     }
-  }, [isVerifying, connected, router]);
+  }, [isLoading, connected, router]);
 
-  // --- THIS IS THE NEW LOADING STATE ---
-  // While verifying, show a full-page skeleton to prevent flickers and layout shifts.
-  if (isVerifying) {
+  // --- MODERN LOADING STATE ---
+  // While loading, we show a full-page skeleton.
+  if (isLoading) {
     return (
       <div className="flex min-h-screen w-full flex-col">
-        {/* Render the actual header during loading to prevent it from popping in later */}
         <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background/80 px-4 backdrop-blur-sm md:px-6">
           <nav className="hidden flex-col gap-6 text-lg font-medium md:flex md:flex-row md:items-center md:gap-5 md:text-sm lg:gap-6">
             <a href="/dashboard" className="flex items-center gap-2 font-bold text-foreground">
@@ -54,19 +69,15 @@ export default function DashboardLayout({
             <WalletMultiButton />
           </div>
         </header>
-        {/* Render a skeleton placeholder for the page content */}
-        <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
-            <div className='space-y-2'>
-                <Skeleton className="h-8 w-64" />
-                <Skeleton className="h-4 w-96" />
-            </div>
-            <Skeleton className="h-96 w-full rounded-xl" />
+        <main className="flex flex-1 flex-col items-center justify-center gap-4 p-4 md:gap-8 md:p-8">
+            <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            <p className="text-muted-foreground">Verifying wallet connection...</p>
         </main>
       </div>
     );
   }
 
-  // If verification is complete and the user is connected, show the page content.
+  // If loading is complete and the user is connected, show the page content.
   if (connected) {
     return (
       <div className="flex min-h-screen w-full flex-col">
@@ -101,11 +112,10 @@ export default function DashboardLayout({
     );
   }
 
-  // If verification is done and user is not connected, show a redirecting message.
-  // The useEffect hook above will handle the actual redirect.
+  // If loading is done and user is not connected, show a redirecting message.
   return (
     <div className="flex h-screen w-full items-center justify-center">
-        <p className="text-muted-foreground">Redirecting...</p>
+        <p className="text-muted-foreground">Redirecting to home page...</p>
     </div>
   );
 }
