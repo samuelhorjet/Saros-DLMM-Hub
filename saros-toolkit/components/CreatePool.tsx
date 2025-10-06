@@ -339,7 +339,10 @@ export const CreatePool: React.FC<{ sdk: LiquidityBookServices; onPoolCreated: (
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
         <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}>
-            <Card className="w-full max-w-md text-center">
+            <Card className="w-full max-w-md text-center relative">
+                <button onClick={onPoolCreated} className="absolute top-3 right-3 text-muted-foreground hover:text-foreground">
+                    <X className="h-5 w-5" />
+                </button>
                 <CardHeader>
                     <CardTitle>Pool Created Successfully!</CardTitle>
                 </CardHeader>

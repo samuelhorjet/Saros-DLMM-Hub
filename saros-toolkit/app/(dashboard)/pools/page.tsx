@@ -191,6 +191,7 @@ const PoolsPageContent = () => {
             <PoolList
               pools={pools}
               onPoolSelect={handlePoolSelect}
+              sdk={sdk} // Pass the initialized SDK here
               onRefresh={handleRefresh}
               loading={!!loadingText}
               loadingText={loadingText}

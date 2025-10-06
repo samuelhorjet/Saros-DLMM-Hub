@@ -75,30 +75,26 @@ const PaginationControls: React.FC<PaginationControlsProps> = ({ currentPage, to
 interface PoolListProps {
   pools: any[];
   onPoolSelect: (address: string) => void;
+  sdk: LiquidityBookServices; // Expect the SDK as a prop
   onRefresh: () => Promise<void>;
   loading: boolean;
   loadingText: string;
   onCreatePoolClick: () => void;
 }
 
-export const PoolList: React.FC<PoolListProps> = ({ pools, onPoolSelect, onRefresh, loading, loadingText, onCreatePoolClick }) => {
+export const PoolList: React.FC<PoolListProps> = ({ pools, onPoolSelect, sdk, onRefresh, loading, loadingText, onCreatePoolClick }) => {
   const [searchValue, setSearchValue] = useState("");
   const [searchError, setSearchError] = useState<string | null>(null);
   const [isValidating, setIsValidating] = useState(false);
   const [filterOption, setFilterOption] = useState<"all" | "with-liquidity" | "zero-liquidity">("with-liquidity");
   const [sortOption, setSortOption] = useState<"desc" | "asc">("desc");
   const [currentPage, setCurrentPage] = useState(1);
-  const [sdk, setSdk] = useState<LiquidityBookServices | null>(null);
-
-  useEffect(() => {
-    setSdk(new LiquidityBookServices({ mode: "DEVNET" as any }));
-  }, []);
 
   const POOLS_PER_PAGE = 10;
 
   useEffect(() => {
     const isPotentialAddress = searchValue.length >= 32 && searchValue.length <= 44 && !searchValue.includes("/");
-    if (!isPotentialAddress || !sdk) {
+    if (!isPotentialAddress) {
       setSearchError(null);
       setIsValidating(false);
       return;
