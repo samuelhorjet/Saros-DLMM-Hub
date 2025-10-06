@@ -206,28 +206,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ sdk, onNavigate }) => {
                                 </Button>
                             </CardContent>
                         </Card>
-
-                        {userCreatedPoolsDetails.length > 0 && (
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle>My Created Pools</CardTitle>
-                                    <CardDescription>A list of pools you have created with this app.</CardDescription>
-                                </CardHeader>
-                                <CardContent className="space-y-3">
-                                    {userCreatedPoolsDetails.map(pool => (
-                                        <div key={pool.address} className="flex items-center justify-between rounded-md border p-3 hover:bg-muted/50">
-                                            <div className="flex items-center gap-3">
-                                                <PairLogos baseLogo={pool.baseLogoURI} quoteLogo={pool.quoteLogoURI} baseSymbol={pool.baseSymbol} quoteSymbol={pool.quoteSymbol} />
-                                                <span className="font-semibold">{pool.baseSymbol}/{pool.quoteSymbol}</span>
-                                            </div>
-                                            <Button variant="ghost" size="sm" onClick={() => onNavigate(`/pools/${pool.address}`)}>
-                                                View Pool
-                                            </Button>
-                                        </div>
-                                    ))}
-                                </CardContent>
-                            </Card>
-                        )}
                     </div>
 
                     <div className="lg:col-span-1">
