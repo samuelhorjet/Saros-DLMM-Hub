@@ -9,6 +9,27 @@ This Next.js application provides a seamless, high-performance user experience f
 
 ---
 
+## 🎥 Live Demo
+
+<p align="center">
+  <a href="https://x.com/SamuelHorjet/status/1975199975924781390" target="_blank">
+    <img
+      src="./public/livevideo.jpg"
+      alt="Live demo of the Saros DLMM application"
+      width="700"
+      style="border-radius: 10px;"
+    />
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://x.com/SamuelHorjet/status/1975199975924781390" target="_blank">
+    ▶️ <b>Watch Live Demo on X (Twitter)</b>
+  </a>
+</p>
+
+---
+
 ## ✨ Key Features
 
 This application is more than just a simple UI; it's a complete toolkit for serious liquidity providers.
