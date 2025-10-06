@@ -353,11 +353,11 @@ export const CreatePool: React.FC<{ sdk: LiquidityBookServices; onPoolCreated: (
                        <CopyButton textToCopy={newPoolAddress} />
                     </div>
                 </CardContent>
-                <CardFooter className="flex gap-2">
-                    <Button variant="outline" className="w-full" onClick={() => window.open(`https://solscan.io/tx/${txSignature}?cluster=devnet`, "_blank")}>
+                <CardFooter className="flex justify-center gap-4">
+                    <Button variant="outline" onClick={() => window.open(`https://solscan.io/tx/${txSignature}?cluster=devnet`, "_blank")}>
                         View Transaction
                     </Button>
-                    <Button className="w-full" onClick={onPoolCreated}>Finish</Button>
+                    <Button onClick={onPoolCreated}>Finish</Button>
                 </CardFooter>
             </Card>
         </motion.div>
