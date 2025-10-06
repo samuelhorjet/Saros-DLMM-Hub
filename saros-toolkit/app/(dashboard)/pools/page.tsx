@@ -1,8 +1,10 @@
+// src/app/pools/page.tsx
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { LiquidityBookServices, MODE } from "@saros-finance/dlmm-sdk";
 import { PoolList } from "@/components/PoolList";
+import { CreatePool } from "@/components/CreatePool";
 import { PublicKey } from "@solana/web3.js";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { getTokenInfo } from "@/utils/token";
@@ -12,17 +14,14 @@ import { getPriceFromId } from "@saros-finance/dlmm-sdk/utils/price";
 
 const PoolsPageContent = () => {
   const { connection } = useConnection();
-  const wallet = useWallet(); // The layout guarantees the wallet is connected.
+  const wallet = useWallet();
   const router = useRouter();
 
   const [pools, setPools] = useState<any[]>([]);
-  // FIX: Updated the initial loading text.
-  const [loadingText, setLoadingText] = useState(
-    "Initializing..."
-  );
+  const [loadingText, setLoadingText] = useState("Initializing...");
+  const [isCreatePoolModalOpen, setIsCreatePoolModalOpen] = useState(false);
 
   const sdk = useMemo(() => {
-    // This check is good practice.
     if (!wallet || !wallet.publicKey) return null;
     const provider = new AnchorProvider(
       connection,
@@ -35,7 +34,6 @@ const PoolsPageContent = () => {
     return sdkInstance;
   }, [connection, wallet]);
 
-  
   const fetchAndFilterPools = useCallback(
     async (forceRefresh: boolean = false) => {
       if (!sdk) return;
@@ -62,10 +60,9 @@ const PoolsPageContent = () => {
           const poolsProcessed = i + batchAddresses.length;
           let estimatedTimeString = "";
 
-          // Calculate and show estimate only after the first batch for better accuracy
           if (i > 0) {
-            const elapsedTime = Date.now() - startTime; // in milliseconds
-            const avgTimePerPool = elapsedTime / i; // 'i' is the number of pools *completed* before this batch
+            const elapsedTime = Date.now() - startTime;
+            const avgTimePerPool = elapsedTime / i;
             const poolsRemaining = uniquePoolAddresses.length - i;
             const estimatedMs = Math.round(poolsRemaining * avgTimePerPool);
 
@@ -157,16 +154,21 @@ const PoolsPageContent = () => {
     await fetchAndFilterPools(true);
   };
 
+  const handlePoolCreated = () => {
+    setIsCreatePoolModalOpen(false);
+    handleRefresh();
+  };
+
   const handlePoolSelect = (address: string) => {
     router.push(`/pools/${address}`);
   };
 
-    useEffect(() => {
+  useEffect(() => {
     if (sdk) {
-      fetchAndFilterPools(false); // `false` = try loading from cache first
+      fetchAndFilterPools(false);
     }
   }, [sdk, fetchAndFilterPools]);
-  
+
   return (
     <div className="flex min-h-screen w-full flex-col">
       <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
@@ -177,17 +179,24 @@ const PoolsPageContent = () => {
           </p>
         </div>
 
-        {/* --- Simplified Conditional Rendering --- */}
-        {/* We no longer check for `connected`. We just check if the SDK is ready. */}
         {sdk ? (
-          <PoolList
-            pools={pools}
-            onPoolSelect={handlePoolSelect}
-            sdk={sdk}
-            onRefresh={handleRefresh}
-            loading={!!loadingText}
-            loadingText={loadingText}
-          />
+          <>
+            {isCreatePoolModalOpen && (
+              <CreatePool
+                sdk={sdk}
+                onPoolCreated={handlePoolCreated}
+                onClose={() => setIsCreatePoolModalOpen(false)}
+              />
+            )}
+            <PoolList
+              pools={pools}
+              onPoolSelect={handlePoolSelect}
+              onRefresh={handleRefresh}
+              loading={!!loadingText}
+              loadingText={loadingText}
+              onCreatePoolClick={() => setIsCreatePoolModalOpen(true)}
+            />
+          </>
         ) : (
           <div className="flex flex-1 items-center justify-center rounded-lg border-2 border-dashed">
             <p className="text-muted-foreground">Initializing SDK...</p>

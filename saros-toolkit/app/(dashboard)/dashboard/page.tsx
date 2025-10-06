@@ -23,7 +23,7 @@ export default function DashboardPage() {
       );
       setProvider(provider);
       const sdkInstance = new LiquidityBookServices({ mode: MODE.DEVNET });
-      sdkInstance.connection = connection; // ✅ force SDK to use your RPC
+      sdkInstance.connection = connection;
       return sdkInstance;
     } catch (error) {
       console.error("Error initializing SDK:", error);
@@ -31,8 +31,8 @@ export default function DashboardPage() {
     }
   }, [connected, connection, wallet]);
 
-  const handleNavigation = (section: "pools" | "positions") => {
-    router.push(`/${section}`);
+  const handleNavigation = (path: string) => {
+    router.push(path);
   };
 
   return (

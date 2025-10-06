@@ -5,10 +5,11 @@ export interface Activity {
     details: string;
     tx: string;
     timestamp: number;
+    poolAddress?: string; 
 }
 
 const LOG_KEY = 'saros_dlmm_activity_log';
-const MAX_LOG_SIZE = 7; // Keep the last 7 activities
+const MAX_LOG_SIZE = 7; 
 
 /**
  * Adds a new activity to the log in localStorage.

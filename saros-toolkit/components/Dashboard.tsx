@@ -8,13 +8,13 @@ import { LiquidityBookServices } from '@saros-finance/dlmm-sdk';
 import { EnrichedPositionData } from '@/app/(dashboard)/positions/page';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Wallet, Layers, CheckCircle, TrendingUp, Plus, LayoutGrid, AlertCircle, ExternalLink, History, PlusSquare, Copy } from "lucide-react";
+import { Wallet, Layers, CheckCircle, Plus, LayoutGrid, AlertCircle, ExternalLink, History, PlusSquare, MoreHorizontal } from "lucide-react";
 import { CreatePool } from './CreatePool';
 import { Activity, getActivityLog } from '@/utils/activityLog';
-import { getUserCreatedPools } from '@/utils/userCreatedPools'; // <-- IMPORT NEW UTILITY
+import { getUserCreatedPools } from '@/utils/userCreatedPools';
 import { Skeleton } from './ui/skeleton';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
 
-// --- TIME FORMATTING HELPER ---
 function formatTimeAgo(timestamp: number): string {
     const now = Date.now();
     const seconds = Math.floor((now - timestamp) / 1000);
@@ -27,7 +27,6 @@ function formatTimeAgo(timestamp: number): string {
     return `${days}d ago`;
 }
 
-// --- POOL LOGO HELPER ---
 const logoStyle: React.CSSProperties = {
   width: 28, height: 28, borderRadius: "50%", backgroundColor: "#333", border: "2px solid var(--card)"
 };
@@ -45,7 +44,7 @@ const PairLogos: React.FC<{ baseLogo?: string; quoteLogo?: string; baseSymbol?: 
 
 interface DashboardProps {
     sdk: LiquidityBookServices;
-    onNavigate: (section: 'pools' | 'positions') => void;
+    onNavigate: (path: string) => void;
 }
 
 const StatCardSkeleton: React.FC = () => (
@@ -75,11 +74,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ sdk, onNavigate }) => {
     const { publicKey } = useWallet();
     const { connection } = useConnection();
 
-    // --- STATE MANAGEMENT ---
     const [isCreatePoolModalOpen, setIsCreatePoolModalOpen] = useState(false);
     const [activities, setActivities] = useState<Activity[]>([]);
     
-    // State for stats, initialized to null for '-' display logic
     const [solBalance, setSolBalance] = useState<number | null>(null);
     const [totalPositions, setTotalPositions] = useState<number | null>(null);
     const [activePositions, setActivePositions] = useState<number | null>(null);
@@ -94,11 +91,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ sdk, onNavigate }) => {
         setIsLoading(true);
         setError(null);
         try {
-            // Fetch SOL Balance
             const lamports = await connection.getBalance(publicKey);
             setSolBalance(lamports / LAMPORTS_PER_SOL);
 
-            // Fetch Position Data from Cache and calculate stats
             const cachedData = localStorage.getItem(`cachedEnrichedPositions_${publicKey.toBase58()}`);
             if (cachedData) {
                 const positions: EnrichedPositionData[] = JSON.parse(cachedData);
@@ -108,11 +103,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ sdk, onNavigate }) => {
                     return totalLiquidity > BigInt(0) && p.poolDetails.activeId >= p.position.lowerBinId && p.poolDetails.activeId <= p.position.upperBinId;
                 }).length);
             } else {
-                setTotalPositions(0); // If no cache exists, we know the count is 0 for our app
+                setTotalPositions(0);
                 setActivePositions(0);
             }
 
-            // Fetch User Created Pools Data
             const createdPoolAddresses = getUserCreatedPools(publicKey.toBase58());
             setUserCreatedPoolsCount(createdPoolAddresses.length);
 
@@ -122,14 +116,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ sdk, onNavigate }) => {
                     const allPools = JSON.parse(allPoolsCache);
                     const details = createdPoolAddresses
                         .map(address => allPools.find((p: any) => p.address === address))
-                        .filter(Boolean); // Filter out any pools that might not be in the main cache
+                        .filter(Boolean);
                     setUserCreatedPoolsDetails(details);
                 }
             } else {
                 setUserCreatedPoolsDetails([]);
             }
 
-            // Fetch Activity Log
             setActivities(getActivityLog());
 
         } catch (err: any) {
@@ -146,7 +139,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ sdk, onNavigate }) => {
     
     const handlePoolCreated = () => {
         setIsCreatePoolModalOpen(false);
-        fetchDashboardData(); // Re-fetch all dashboard data
+        fetchDashboardData();
     };
 
     const formatStatValue = (value: number | null) => {
@@ -202,13 +195,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ sdk, onNavigate }) => {
                                 <CardTitle>Quick Actions</CardTitle>
                             </CardHeader>
                             <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                                <Button variant="outline" size="lg" onClick={() => onNavigate('pools')}>
+                                <Button variant="outline" size="lg" onClick={() => onNavigate('/pools')}>
                                     <LayoutGrid className="mr-2 h-4 w-4" /> View & Manage Pools
                                 </Button>
                                 <Button variant="default" size="lg" onClick={() => setIsCreatePoolModalOpen(true)}>
                                     <Plus className="mr-2 h-4 w-4" /> Create a New Pool
                                 </Button>
-                                <Button variant="outline" size="lg" onClick={() => onNavigate('positions')}>
+                                <Button variant="outline" size="lg" onClick={() => onNavigate('/positions')}>
                                     <Layers className="mr-2 h-4 w-4" /> View My Positions
                                 </Button>
                             </CardContent>
@@ -227,7 +220,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ sdk, onNavigate }) => {
                                                 <PairLogos baseLogo={pool.baseLogoURI} quoteLogo={pool.quoteLogoURI} baseSymbol={pool.baseSymbol} quoteSymbol={pool.quoteSymbol} />
                                                 <span className="font-semibold">{pool.baseSymbol}/{pool.quoteSymbol}</span>
                                             </div>
-                                            <Button variant="ghost" size="sm" onClick={() => onNavigate('pools' as any)}>
+                                            <Button variant="ghost" size="sm" onClick={() => onNavigate(`/pools/${pool.address}`)}>
                                                 View Pool
                                             </Button>
                                         </div>
@@ -254,16 +247,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ sdk, onNavigate }) => {
                                     <div className="space-y-4">
                                         {activities.map((activity) => (
                                             <div key={activity.tx} className="flex items-start justify-between">
-                                                <div className="flex-1">
+                                                <div className="flex-1 pr-2">
                                                     <p className="font-semibold text-sm">{activity.type}</p>
-                                                    <p className="text-xs text-muted-foreground">{activity.details}</p>
-                                                </div>
-                                                <div className="text-right ml-2 flex-shrink-0">
-                                                    <a href={`https://solscan.io/tx/${activity.tx}?cluster=devnet`} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-primary hover:underline">
-                                                        View <ExternalLink className="inline-block h-3 w-3" />
-                                                    </a>
+                                                    <p className="text-xs text-muted-foreground truncate">{activity.details}</p>
                                                      <p className="text-xs text-muted-foreground">{formatTimeAgo(activity.timestamp)}</p>
                                                 </div>
+                                                <DropdownMenu>
+                                                    <DropdownMenuTrigger asChild>
+                                                        <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0">
+                                                            <MoreHorizontal className="h-4 w-4" />
+                                                        </Button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="end">
+                                                        {activity.type === 'Create Pool' && activity.poolAddress && (
+                                                            <DropdownMenuItem onClick={() => onNavigate(`/pools/${activity.poolAddress}`)}>
+                                                                <LayoutGrid className="mr-2 h-4 w-4" />
+                                                                View Pool
+                                                            </DropdownMenuItem>
+                                                        )}
+                                                        <DropdownMenuItem onClick={() => window.open(`https://solscan.io/tx/${activity.tx}?cluster=devnet`, "_blank")}>
+                                                            <ExternalLink className="mr-2 h-4 w-4" />
+                                                            View Transaction
+                                                        </DropdownMenuItem>
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
                                             </div>
                                         ))}
                                     </div>

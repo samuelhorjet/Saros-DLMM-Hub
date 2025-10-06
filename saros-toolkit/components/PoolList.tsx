@@ -1,6 +1,6 @@
+// src/components/PoolList.tsx
 "use client";
 import React, { useState, useMemo, useEffect } from "react";
-import { CreatePool } from "./CreatePool";
 import { LiquidityBookServices } from "@saros-finance/dlmm-sdk";
 import { PublicKey } from "@solana/web3.js";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -10,8 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PlusCircle, Search, Copy, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Skeleton } from "@/components/ui/skeleton";
-
-// --- HELPER COMPONENTS ---
 
 const logoStyle: React.CSSProperties = {
   width: 28,
@@ -77,26 +75,30 @@ const PaginationControls: React.FC<PaginationControlsProps> = ({ currentPage, to
 interface PoolListProps {
   pools: any[];
   onPoolSelect: (address: string) => void;
-  sdk: LiquidityBookServices;
   onRefresh: () => Promise<void>;
   loading: boolean;
   loadingText: string;
+  onCreatePoolClick: () => void;
 }
 
-export const PoolList: React.FC<PoolListProps> = ({ pools, onPoolSelect, sdk, onRefresh, loading, loadingText }) => {
-  const [isModalOpen, setIsModalOpen] = useState(false);
+export const PoolList: React.FC<PoolListProps> = ({ pools, onPoolSelect, onRefresh, loading, loadingText, onCreatePoolClick }) => {
   const [searchValue, setSearchValue] = useState("");
   const [searchError, setSearchError] = useState<string | null>(null);
   const [isValidating, setIsValidating] = useState(false);
   const [filterOption, setFilterOption] = useState<"all" | "with-liquidity" | "zero-liquidity">("with-liquidity");
   const [sortOption, setSortOption] = useState<"desc" | "asc">("desc");
   const [currentPage, setCurrentPage] = useState(1);
+  const [sdk, setSdk] = useState<LiquidityBookServices | null>(null);
+
+  useEffect(() => {
+    setSdk(new LiquidityBookServices({ mode: "DEVNET" as any }));
+  }, []);
 
   const POOLS_PER_PAGE = 10;
 
   useEffect(() => {
     const isPotentialAddress = searchValue.length >= 32 && searchValue.length <= 44 && !searchValue.includes("/");
-    if (!isPotentialAddress) {
+    if (!isPotentialAddress || !sdk) {
       setSearchError(null);
       setIsValidating(false);
       return;
@@ -118,11 +120,6 @@ export const PoolList: React.FC<PoolListProps> = ({ pools, onPoolSelect, sdk, on
     return () => clearTimeout(handler);
   }, [searchValue, sdk, onPoolSelect]);
 
-  const handlePoolCreated = async () => {
-    setIsModalOpen(false);
-    await onRefresh();
-  };
-
   const processedPools = useMemo(() => {
     let filteredPools = pools;
     if (filterOption === "with-liquidity") {
@@ -137,10 +134,9 @@ export const PoolList: React.FC<PoolListProps> = ({ pools, onPoolSelect, sdk, on
       );
     }
     
-    // Return a new sorted array
     return [...filteredPools].sort((a, b) => {
       if (filterOption === 'zero-liquidity') {
-        return 0; // No need to sort if all values are zero
+        return 0;
       }
       if (sortOption === "desc") {
         return b.liquidity - a.liquidity;
@@ -150,7 +146,6 @@ export const PoolList: React.FC<PoolListProps> = ({ pools, onPoolSelect, sdk, on
     });
   }, [pools, filterOption, sortOption, searchValue]);
 
-  // Reset to page 1 whenever filters change
   useEffect(() => {
     setCurrentPage(1);
   }, [filterOption, sortOption, searchValue]);
@@ -231,16 +226,12 @@ export const PoolList: React.FC<PoolListProps> = ({ pools, onPoolSelect, sdk, on
           <Button variant="outline" size="icon" onClick={onRefresh} disabled={loading}>
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </Button>
-          <Button onClick={() => setIsModalOpen(true)} disabled={loading} className="w-full md:w-auto">
+          <Button onClick={onCreatePoolClick} disabled={loading} className="w-full md:w-auto">
             <PlusCircle className="h-5 w-5 mr-2" /> Create Pool
           </Button>
         </div>
       </div>
       
-      {isModalOpen && (
-           <CreatePool sdk={sdk} onPoolCreated={handlePoolCreated} onClose={() => setIsModalOpen(false)} />
-      )}
-
       {loading ? renderLoadingState() : (
         <>
             <div className="text-sm text-muted-foreground">

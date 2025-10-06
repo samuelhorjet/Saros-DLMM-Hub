@@ -1,3 +1,4 @@
+// src/components/CreatePool.tsx
 "use client";
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { LiquidityBookServices } from "@saros-finance/dlmm-sdk";
@@ -14,12 +15,9 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ChevronDown, Copy, Search, AlertTriangle, X, Loader2 } from "lucide-react";
 import { addActivityLog } from "@/utils/activityLog";
-import { addUserCreatedPool } from "@/utils/userCreatedPools"; // <-- 1. IMPORT THE NEW UTILITY
+import { addUserCreatedPool } from "@/utils/userCreatedPools";
 
-// --- CONSTANTS ---
 const SUPPORTED_BIN_STEPS = [1, 2, 4, 5, 8, 10, 20, 25, 40, 50, 80, 100, 200];
-
-// --- HELPER UI COMPONENTS ---
 
 const TokenLogo: React.FC<{ token: TokenInfo }> = React.memo(({ token }) => {
   return token.logoURI ? (
@@ -68,7 +66,6 @@ const TokenModalRow: React.FC<{ token: TokenInfo; onSelect: (token: TokenInfo) =
     </div>
 );
 
-// --- TOKEN SELECTION MODAL ---
 interface TokenSelectionModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -132,7 +129,7 @@ const TokenSelectionModal: React.FC<TokenSelectionModalProps> = ({ isOpen, onClo
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="flex h-[70vh] w-full max-w-md flex-col overflow-hidden rounded-lg border bg-card"
+            className="flex w-full max-w-md flex-col overflow-hidden rounded-lg border bg-card max-h-[70vh]"
         >
             <div className="p-4 border-b">
                 <h4 className="font-semibold">Select a Token</h4>
@@ -174,7 +171,6 @@ const TokenSelectionModal: React.FC<TokenSelectionModalProps> = ({ isOpen, onClo
   );
 };
 
-// --- MAIN CREATE POOL COMPONENT ---
 export const CreatePool: React.FC<{ sdk: LiquidityBookServices; onPoolCreated: () => void; onClose: () => void; }> = ({ sdk, onPoolCreated, onClose }) => {
   const { publicKey, sendTransaction } = useWallet();
   const { connection } = useConnection();
@@ -305,12 +301,12 @@ export const CreatePool: React.FC<{ sdk: LiquidityBookServices; onPoolCreated: (
       setNewPoolAddress(finalPoolAddress);
       setTxSignature(signature);
 
-      // --- 2. LOG ACTIVITY AND SAVE CREATED POOL ---
       if (signature) {
         addActivityLog({
             type: 'Create Pool',
             details: `Created ${actualBase.symbol}/${actualQuote.symbol} pool`,
             tx: signature,
+            poolAddress: finalPoolAddress,
         });
         addUserCreatedPool(finalPoolAddress, publicKey.toBase58());
       }
@@ -354,7 +350,7 @@ export const CreatePool: React.FC<{ sdk: LiquidityBookServices; onPoolCreated: (
                        <CopyButton textToCopy={newPoolAddress} />
                     </div>
                 </CardContent>
-                <CardFooter className="flex gap-4">
+                <CardFooter className="flex gap-2">
                     <Button variant="outline" className="w-full" onClick={() => window.open(`https://solscan.io/tx/${txSignature}?cluster=devnet`, "_blank")}>
                         View Transaction
                     </Button>
